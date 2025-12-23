@@ -33,6 +33,9 @@ func GetRepoDir() (string, bool) {
 func GetResolvedProjectDir(explicitPath string) (string, error) {
 	// 1. Explicitly provided via flag
 	if explicitPath != "" {
+		if explicitPath == "home" || explicitPath == "global" {
+			return GetGlobalDir()
+		}
 		abs, err := filepath.Abs(explicitPath)
 		if err != nil {
 			return "", err

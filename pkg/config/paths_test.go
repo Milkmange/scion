@@ -85,3 +85,39 @@ func TestGetRepoDir(t *testing.T) {
 		t.Errorf("expected %q, got %q", evalScion, evalGot)
 	}
 }
+
+func TestGetResolvedProjectDir(t *testing.T) {
+	tmpHome := t.TempDir()
+	origHome := os.Getenv("HOME")
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	globalDir := filepath.Join(tmpHome, GlobalDir)
+	if err := os.MkdirAll(globalDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		explicit string
+		want     string
+	}{
+		{"home", globalDir},
+		{"global", globalDir},
+		{tmpHome, tmpHome},
+	}
+
+	for _, tt := range tests {
+		got, err := GetResolvedProjectDir(tt.explicit)
+		if err != nil {
+			t.Errorf("GetResolvedProjectDir(%q) error: %v", tt.explicit, err)
+			continue
+		}
+		
+		evalGot, _ := filepath.EvalSymlinks(got)
+		evalWant, _ := filepath.EvalSymlinks(tt.want)
+
+		if evalGot != evalWant {
+			t.Errorf("GetResolvedProjectDir(%q) = %q, want %q", tt.explicit, evalGot, evalWant)
+		}
+	}
+}
