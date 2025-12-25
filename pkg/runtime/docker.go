@@ -53,7 +53,7 @@ type dockerListOutput struct {
 }
 
 func (r *DockerRuntime) List(ctx context.Context, labelFilter map[string]string) ([]AgentInfo, error) {
-	args := []string{"ps", "-a", "--format", "{{json .}}"}
+	args := []string{"ps", "-a", "--no-trunc", "--format", "{{json .}}"}
 	cmd := exec.CommandContext(ctx, r.Command, args...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -121,7 +121,9 @@ func (r *DockerRuntime) Attach(ctx context.Context, id string) error {
 	var agent *AgentInfo
 	if err == nil {
 		for _, a := range agents {
-			if a.ID == id || a.Name == id {
+			// Match by full ID, short ID (12 chars), or name (with or without leading slash)
+			if a.ID == id || (len(id) >= 12 && strings.HasPrefix(a.ID, id)) || (len(a.ID) >= 12 && strings.HasPrefix(id, a.ID)) ||
+				a.Name == id || a.Name == "/"+id || strings.TrimPrefix(a.Name, "/") == id {
 				agent = &a
 				break
 			}
