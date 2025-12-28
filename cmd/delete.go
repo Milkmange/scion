@@ -18,7 +18,13 @@ var deleteCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
-		rt := runtime.GetRuntime(grovePath, agentRuntime)
+
+		effectiveRuntime := agentRuntime
+		if effectiveRuntime == "" {
+			effectiveRuntime = agent.GetSavedRuntime(agentName, grovePath)
+		}
+
+		rt := runtime.GetRuntime(grovePath, effectiveRuntime)
 		mgr := agent.NewManager(rt)
 
 

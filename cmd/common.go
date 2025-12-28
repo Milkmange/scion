@@ -24,7 +24,12 @@ func RunAgent(cmd *cobra.Command, args []string, resume bool) error {
 	agentName := args[0]
 	task := strings.Join(args[1:], " ")
 
-	rt := runtime.GetRuntime(grovePath, agentRuntime)
+	effectiveRuntime := agentRuntime
+	if effectiveRuntime == "" {
+		effectiveRuntime = agent.GetSavedRuntime(agentName, grovePath)
+	}
+
+	rt := runtime.GetRuntime(grovePath, effectiveRuntime)
 	mgr := agent.NewManager(rt)
 
 	// Flag takes ultimate precedence

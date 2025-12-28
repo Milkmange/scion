@@ -20,6 +20,10 @@ func NewDockerRuntime() *DockerRuntime {
 	}
 }
 
+func (r *DockerRuntime) Name() string {
+	return "docker"
+}
+
 func (r *DockerRuntime) Run(ctx context.Context, config RunConfig) (string, error) {
 	args, err := buildCommonRunArgs(config)
 	if err != nil {

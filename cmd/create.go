@@ -20,7 +20,12 @@ The agent will be created from a template.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
 
-		rt := runtime.GetRuntime(grovePath, agentRuntime)
+		effectiveRuntime := agentRuntime
+		if effectiveRuntime == "" {
+			effectiveRuntime = agent.GetSavedRuntime(agentName, grovePath)
+		}
+
+		rt := runtime.GetRuntime(grovePath, effectiveRuntime)
 		mgr := agent.NewManager(rt)
 
 		opts := api.StartOptions{

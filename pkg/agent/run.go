@@ -206,7 +206,7 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 	if opts.Resume {
 		status = "resumed"
 	}
-		_ = UpdateAgentStatus(opts.Name, opts.GrovePath, status)
+	_ = UpdateAgentConfig(opts.Name, opts.GrovePath, status, m.Runtime.Name())
 	
 			// Fetch fresh info
 			allAgents, err := m.Runtime.List(ctx, map[string]string{"scion.name": opts.Name})

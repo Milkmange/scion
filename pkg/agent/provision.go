@@ -46,6 +46,9 @@ func DeleteAgentFiles(agentName string, grovePath string) error {
 
 func (m *AgentManager) Provision(ctx context.Context, opts api.StartOptions) (*api.ScionConfig, error) {
 	_, _, _, cfg, err := GetAgent(opts.Name, opts.Template, opts.Image, opts.GrovePath, "created")
+	if err == nil {
+		_ = UpdateAgentConfig(opts.Name, opts.GrovePath, "created", m.Runtime.Name())
+	}
 	return cfg, err
 }
 
@@ -218,7 +221,25 @@ func UpdateClaudeJSON(agentName, agentHome, agentWorkspace string) error {
 	return os.WriteFile(claudeJSONPath, newData, 0644)
 }
 
-func UpdateAgentStatus(agentName string, grovePath string, status string) error {
+func GetSavedRuntime(agentName string, grovePath string) string {
+	projectDir, err := config.GetResolvedProjectDir(grovePath)
+	if err != nil {
+		return ""
+	}
+	scionJSONPath := filepath.Join(projectDir, "agents", agentName, "home", "scion.json")
+	if _, err := os.Stat(scionJSONPath); err == nil {
+		data, err := os.ReadFile(scionJSONPath)
+		if err == nil {
+			var cfg api.ScionConfig
+			if err := json.Unmarshal(data, &cfg); err == nil {
+				return cfg.Runtime
+			}
+		}
+	}
+	return ""
+}
+
+func UpdateAgentConfig(agentName string, grovePath string, status string, runtime string) error {
 	projectDir, err := config.GetResolvedProjectDir(grovePath)
 	if err != nil {
 		return err
@@ -245,7 +266,12 @@ func UpdateAgentStatus(agentName string, grovePath string, status string) error 
 	if cfg.Agent == nil {
 		cfg.Agent = &api.AgentConfig{}
 	}
-	cfg.Agent.Status = status
+	if status != "" {
+		cfg.Agent.Status = status
+	}
+	if runtime != "" {
+		cfg.Runtime = runtime
+	}
 
 	newData, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

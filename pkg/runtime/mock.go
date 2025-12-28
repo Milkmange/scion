@@ -16,6 +16,10 @@ type MockRuntime struct {
 	ImageExistsFunc func(ctx context.Context, image string) (bool, error)
 }
 
+func (m *MockRuntime) Name() string {
+	return "mock"
+}
+
 func (m *MockRuntime) Run(ctx context.Context, config RunConfig) (string, error) {
 	if m.RunFunc != nil {
 		return m.RunFunc(ctx, config)

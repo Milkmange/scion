@@ -34,6 +34,10 @@ func NewKubernetesRuntime(client *k8s.Client) *KubernetesRuntime {
 	}
 }
 
+func (r *KubernetesRuntime) Name() string {
+	return "kubernetes"
+}
+
 func (r *KubernetesRuntime) Run(ctx context.Context, config RunConfig) (string, error) {
 	fmt.Printf("Starting agent '%s' on Kubernetes...\n", config.Name)
 	namespace := r.DefaultNamespace

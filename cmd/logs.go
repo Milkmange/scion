@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/ptone/scion-agent/pkg/agent"
 	"github.com/ptone/scion-agent/pkg/runtime"
 	"github.com/spf13/cobra"
 )
@@ -17,7 +18,13 @@ var logsCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
-		rt := runtime.GetRuntime(grovePath, agentRuntime)
+
+		effectiveRuntime := agentRuntime
+		if effectiveRuntime == "" {
+			effectiveRuntime = agent.GetSavedRuntime(agentName, grovePath)
+		}
+
+		rt := runtime.GetRuntime(grovePath, effectiveRuntime)
 
 		// 1. Try to find the agent to get its grove path
 		agents, err := rt.List(context.Background(), map[string]string{

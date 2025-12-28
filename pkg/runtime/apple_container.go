@@ -20,6 +20,10 @@ func NewAppleContainerRuntime() *AppleContainerRuntime {
 	}
 }
 
+func (r *AppleContainerRuntime) Name() string {
+	return "container"
+}
+
 func (r *AppleContainerRuntime) Run(ctx context.Context, config RunConfig) (string, error) {
 	args, err := buildCommonRunArgs(config)
 	if err != nil {

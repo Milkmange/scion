@@ -28,6 +28,7 @@ type RunConfig struct {
 }
 
 type Runtime interface {
+	Name() string
 	Run(ctx context.Context, config RunConfig) (string, error)
 	Stop(ctx context.Context, id string) error
 	Delete(ctx context.Context, id string) error

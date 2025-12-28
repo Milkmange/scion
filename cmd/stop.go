@@ -18,7 +18,13 @@ var stopCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
-		rt := runtime.GetRuntime(grovePath, agentRuntime)
+
+		effectiveRuntime := agentRuntime
+		if effectiveRuntime == "" {
+			effectiveRuntime = agent.GetSavedRuntime(agentName, grovePath)
+		}
+
+		rt := runtime.GetRuntime(grovePath, effectiveRuntime)
 		mgr := agent.NewManager(rt)
 
 		
@@ -27,8 +33,7 @@ var stopCmd = &cobra.Command{
 			return err
 		}
 
-		_ = agent.UpdateAgentStatus(agentName, grovePath, "stopped")
-
+		        _ = agent.UpdateAgentConfig(agentName, grovePath, "stopped", "")
 		if stopRm {
 			if err := mgr.Delete(context.Background(), agentName, true, grovePath); err != nil {
 				return err
