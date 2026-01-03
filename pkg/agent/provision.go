@@ -161,7 +161,7 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		Name:          agentName,
 		Template:      templateName,
 		Profile:       profileName,
-		SessionStatus: "ACTIVE",
+		SessionStatus: "CREATED",
 	}
 	if optionalStatus != "" {
 		info.Status = optionalStatus
