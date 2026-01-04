@@ -1,0 +1,36 @@
+{
+  "yolo": true,
+  "security": {
+    "auth": {
+      "selectedType": "gemini-api-key"
+    }
+  },
+	"telemetry": {
+    "enabled": false
+  },
+	"general": {
+    "disableAutoUpdate": true,
+    "disableUpdateNag": true,
+    "previewFeatures": true
+  },
+	"ui": {
+    "accessibility": {
+      "disableLoadingPhrases": true
+    },
+    "hideFooter": true,
+    "hideWindowTitle": true
+  },
+	"tools": {
+	    "enableHooks": true,
+	    "enableMessageBusIntegration": true
+	},
+  "hooks": {
+    "SessionStart": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_hook.py"}]}],
+    "SessionEnd": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_hook.py"}]}],
+    "BeforeAgent": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_hook.py"}]}],
+    "AfterAgent": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_hook.py"}]}],
+    "BeforeTool": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_hook.py"}]}],
+    "AfterTool": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_hook.py"}]}],
+    "Notification": [{"matcher": "ToolPermission", "hooks": [{"name": "scion-status", "type": "command", "command": "python3 $HOME/scion_hook.py"}]}]
+  }
+}

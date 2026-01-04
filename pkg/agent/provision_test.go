@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ptone/scion-agent/pkg/config"
 )
 
 func TestProvisionAgentEnvMerging(t *testing.T) {
@@ -106,5 +108,56 @@ func TestProvisionAgentEnvMerging(t *testing.T) {
 		if persistedCfg.Env[k] != v {
 			t.Errorf("persisted: expected env[%s] = %q, got %q", k, v, persistedCfg.Env[k])
 		}
+	}
+}
+
+func TestProvisionGeminiAgentSettings(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Move to tmpDir
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	// Mock HOME
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	// Initialize a mock project
+	projectDir := filepath.Join(tmpDir, "project")
+	projectScionDir := filepath.Join(projectDir, ".scion")
+	if err := config.InitProject(projectScionDir); err != nil {
+		t.Fatalf("InitProject failed: %v", err)
+	}
+
+	// Chdir to projectDir so GetProjectDir finds it
+	if err := os.Chdir(projectDir); err != nil {
+		t.Fatal(err)
+	}
+
+	// Provision a gemini agent
+	agentName := "gemini-agent"
+	_, _, _, err := ProvisionAgent(context.Background(), agentName, "gemini", "", projectScionDir, "", "")
+	if err != nil {
+		t.Fatalf("ProvisionAgent failed: %v", err)
+	}
+
+	// Verify agent's settings.json
+	agentSettingsPath := filepath.Join(projectScionDir, "agents", agentName, "home", ".gemini", "settings.json")
+	data, err := os.ReadFile(agentSettingsPath)
+	if err != nil {
+		t.Fatalf("failed to read agent settings.json: %v", err)
+	}
+
+	var settings map[string]interface{}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		t.Fatalf("failed to unmarshal agent settings.json: %v", err)
+	}
+
+	security := settings["security"].(map[string]interface{})
+	auth := security["auth"].(map[string]interface{})
+	if auth["selectedType"] != "gemini-api-key" {
+		t.Errorf("expected selectedType gemini-api-key, got %v", auth["selectedType"])
 	}
 }
