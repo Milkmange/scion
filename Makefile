@@ -2,7 +2,7 @@
 
 build:
 	@echo "Building scion..."
-	@go build -ldflags "$$(./hack/version.sh)" -o scion main.go
+	@go build -ldflags "$$(./hack/version.sh)" -o scion ./cmd/scion
 
 clean:
 	@rm -f scion

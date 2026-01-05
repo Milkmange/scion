@@ -13,7 +13,7 @@ mkdir -p "${TEST_DIR}"
 mkdir -p "${BIN_DIR}"
 
 echo "=== Building scion binary to ${BIN_DIR} ==="
-go build -o "${BIN_DIR}/scion" .
+go build -o "${BIN_DIR}/scion" ./cmd/scion
 
 cd "${TEST_DIR}"
 if [ ! -d ".git" ]; then

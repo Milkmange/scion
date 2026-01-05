@@ -3,7 +3,7 @@ set -e
 
 # Build the binary
 echo "Building scion..."
-go build -buildvcs=false -o scion .
+go build -buildvcs=false -o scion ./cmd/scion
 
 # Check if binary exists
 if [ ! -f ./scion ]; then

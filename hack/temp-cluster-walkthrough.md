@@ -82,7 +82,7 @@ Before running agents, you need to initialize the scion grove to seed the templa
 
 ```bash
 # Build the scion binary
-go build -o scion .
+go build -o scion ./cmd/scion
 
 # Initialize the grove (creates .scion directory)
 ./scion grove init
