@@ -29,10 +29,17 @@ You should see output like:
 ```
 2025/01/25 10:00:00 Starting Hub API server on 0.0.0.0:9810
 2025/01/25 10:00:00 Database: sqlite (/Users/you/.scion/hub.db)
-2025/01/25 10:00:00 Starting Runtime Host API server on 0.0.0.0:9800 (mode: connected)
 2025/01/25 10:00:00 Hub API server starting on 0.0.0.0:9810
+2025/01/25 10:00:00 Starting Runtime Host API server on 0.0.0.0:9800 (mode: connected)
 2025/01/25 10:00:00 Runtime Host API server starting on 0.0.0.0:9800
+2025/01/25 10:00:00 Agent dispatcher configured for co-located runtime host
+2025/01/25 10:00:00 Registered global grove with runtime host your-hostname
 ```
+
+When both servers start together, they automatically:
+1. Create a "global" grove as the default grove for the system
+2. Register the runtime host as a contributor to the global grove
+3. Set up an agent dispatcher for zero-friction agent handoff
 
 ### Alternative: Start Just Runtime Host
 
@@ -133,6 +140,8 @@ Expected response (empty initially):
 ```
 
 ### Create an Agent
+
+Agents can be created directly via the Runtime Host API, or through the Hub API with grove-scoped endpoints.
 
 ```bash
 curl -s -X POST http://localhost:9800/api/v1/agents \
@@ -244,9 +253,11 @@ curl -s -X POST http://localhost:9800/api/v1/agents/test-agent/stats | jq
 
 ## 5. Combined Hub + Runtime Host Workflow
 
-This workflow demonstrates how the Hub and Runtime Host APIs work together.
+This workflow demonstrates how the Hub and Runtime Host APIs work together with automatic handoff.
 
-### Step 1: Check Both Servers
+### Step 1: Check Both Servers and Global Grove
+
+When both servers start together, a "global" grove is automatically created and the runtime host is registered.
 
 ```bash
 echo "=== Hub Health ==="
@@ -254,11 +265,77 @@ curl -s http://localhost:9810/healthz | jq
 
 echo -e "\n=== Runtime Host Health ==="
 curl -s http://localhost:9800/healthz | jq
+
+echo -e "\n=== Global Grove ==="
+curl -s http://localhost:9810/api/v1/groves | jq '.groves[] | select(.slug == "global")'
 ```
 
-### Step 2: Register a Grove with Host Info
+### Step 2: Create Agent via Hub (Automatic Handoff)
 
-Register a grove with the Hub, including this runtime host's information:
+When you create an agent via the Hub API while a co-located runtime host is running, the agent is automatically dispatched to the runtime host and started.
+
+```bash
+# Get the global grove ID
+GROVE_ID=$(curl -s http://localhost:9810/api/v1/groves | jq -r '.groves[] | select(.slug == "global") | .id')
+
+# Create an agent in the global grove
+curl -s -X POST http://localhost:9810/api/v1/agents \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"name\": \"Feature Agent\",
+    \"groveId\": \"$GROVE_ID\",
+    \"template\": \"claude\"
+  }" | jq
+```
+
+The agent will be created and automatically started on the co-located runtime host. The response includes the agent with status "provisioning" or "running".
+
+### Step 2b: Create Agent via Grove-Scoped Endpoint (Alternative)
+
+You can also use the RESTful grove-scoped endpoint. This supports both UUID and `{uuid}__{slug}` format for grove IDs:
+
+```bash
+# Using grove ID with slug format for readability
+curl -s -X POST "http://localhost:9810/api/v1/groves/${GROVE_ID}__global/agents" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "Another Agent",
+    "template": "claude"
+  }' | jq
+```
+
+### Step 3: List Agents on Runtime Host
+
+With automatic handoff, agents created via the Hub now appear in the runtime host's agent list:
+
+```bash
+curl -s http://localhost:9800/api/v1/agents | jq
+```
+
+Expected output shows the agent is running:
+```json
+{
+  "agents": [
+    {
+      "agentId": "feature-agent",
+      "name": "Feature Agent",
+      "status": "running",
+      ...
+    }
+  ],
+  "totalCount": 1
+}
+```
+
+### Step 4: Verify Agent in Hub
+
+```bash
+curl -s "http://localhost:9810/api/v1/agents?groveId=$GROVE_ID" | jq
+```
+
+### Step 5: Register Additional Groves (Optional)
+
+For project-specific groves, you can still manually register them:
 
 ```bash
 curl -s -X POST http://localhost:9810/api/v1/groves/register \
@@ -283,37 +360,12 @@ curl -s -X POST http://localhost:9810/api/v1/groves/register \
   }' | jq
 ```
 
-This creates:
-- A grove in the Hub
-- A runtime host record
-- A grove contributor relationship
-- Returns a host token for authentication
+### Step 6: List Agents by Grove
 
-### Step 3: Create Agent via Hub
+Use the grove-scoped endpoint to list agents for a specific grove:
 
 ```bash
-# Use the grove ID from step 2
-GROVE_ID="your-grove-id"
-
-curl -s -X POST http://localhost:9810/api/v1/agents \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"name\": \"Feature Agent\",
-    \"groveId\": \"$GROVE_ID\",
-    \"template\": \"claude\"
-  }" | jq
-```
-
-### Step 4: List Agents on Runtime Host
-
-```bash
-curl -s http://localhost:9800/api/v1/agents | jq
-```
-
-### Step 5: Verify Agent in Hub
-
-```bash
-curl -s "http://localhost:9810/api/v1/agents?groveId=$GROVE_ID" | jq
+curl -s "http://localhost:9810/api/v1/groves/${GROVE_ID}/agents" | jq
 ```
 
 ## 6. Read-Only Mode Testing
@@ -536,7 +588,7 @@ The Runtime Host API lists agents that are:
 1. Actually running as containers with `scion.agent=true` label
 2. Have agent directories in known grove paths
 
-If you created an agent via the Hub but haven't started it on this host, it won't appear in the Runtime Host agent list.
+When both Hub and Runtime Host are running together (co-located), agents created via the Hub are automatically dispatched to the Runtime Host and will appear in both agent lists.
 
 ### Permission Issues
 
@@ -568,5 +620,29 @@ chmod 755 ~/.scion
 | `/api/v1/agents/{id}/stats` | POST | Get stats |
 
 ### Hub API (Port 9810)
+
+**Standard Endpoints:**
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/healthz` | GET | Liveness check |
+| `/api/v1/groves` | GET | List groves |
+| `/api/v1/groves/register` | POST | Register grove with host |
+| `/api/v1/groves/{id}` | GET/PATCH/DELETE | Grove operations |
+| `/api/v1/agents` | GET/POST | List/create agents |
+| `/api/v1/agents/{id}` | GET/PATCH/DELETE | Agent operations |
+
+**Grove-Scoped Endpoints (RESTful):**
+
+These endpoints scope agent operations to a specific grove. The `{groveId}` supports both UUID format and `{uuid}__{slug}` format for readability.
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/groves/{groveId}/agents` | GET | List agents in grove |
+| `/api/v1/groves/{groveId}/agents` | POST | Create agent in grove |
+| `/api/v1/groves/{groveId}/agents/{agentId}` | GET | Get agent in grove |
+| `/api/v1/groves/{groveId}/agents/{agentId}` | PATCH | Update agent in grove |
+| `/api/v1/groves/{groveId}/agents/{agentId}` | DELETE | Delete agent in grove |
+| `/api/v1/groves/{groveId}/agents/{agentId}/status` | POST | Update agent status |
 
 See `hub-api-testing-walkthrough.md` for full Hub API documentation.

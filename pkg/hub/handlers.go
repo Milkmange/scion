@@ -234,8 +234,26 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If a dispatcher is available (co-located runtime host), dispatch the agent
+	// This enables zero-friction handoff - the agent will appear in both Hub and Runtime Host
+	var warnings []string
+	if dispatcher := s.GetDispatcher(); dispatcher != nil {
+		if err := dispatcher.DispatchAgentCreate(ctx, agent); err != nil {
+			// Log the error but don't fail the request - agent is created in Hub
+			warnings = append(warnings, "Failed to dispatch to runtime host: "+err.Error())
+			// The agent remains in pending status
+		} else {
+			// Update agent status to reflect it's being started
+			agent.Status = store.AgentStatusProvisioning
+			if err := s.store.UpdateAgent(ctx, agent); err != nil {
+				warnings = append(warnings, "Failed to update agent status: "+err.Error())
+			}
+		}
+	}
+
 	writeJSON(w, http.StatusCreated, CreateAgentResponse{
-		Agent: agent,
+		Agent:    agent,
+		Warnings: warnings,
 	})
 }
 
@@ -653,6 +671,406 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// handleGroveRoutes routes requests under /api/v1/groves/{groveId}/...
+// It supports both the grove resource endpoints and nested agent endpoints.
+func (s *Server) handleGroveRoutes(w http.ResponseWriter, r *http.Request) {
+	// Extract grove ID and remaining path
+	path := strings.TrimPrefix(r.URL.Path, "/api/v1/groves/")
+	if path == "" {
+		NotFound(w, "Grove")
+		return
+	}
+
+	// Parse the grove ID (supports both UUID and {uuid}__{slug} format)
+	// The grove ID may contain "__" so we need to find the first "/"
+	parts := strings.SplitN(path, "/", 2)
+	groveIDRaw := parts[0]
+	subPath := ""
+	if len(parts) > 1 {
+		subPath = parts[1]
+	}
+
+	// Skip the register endpoint - it's handled separately
+	if groveIDRaw == "register" {
+		NotFound(w, "Grove")
+		return
+	}
+
+	// Parse grove ID to extract UUID (supports {uuid}__{slug} format)
+	groveID := resolveGroveID(groveIDRaw)
+
+	// Check for nested /agents path
+	if strings.HasPrefix(subPath, "agents") {
+		agentPath := strings.TrimPrefix(subPath, "agents")
+		agentPath = strings.TrimPrefix(agentPath, "/")
+		s.handleGroveAgents(w, r, groveID, agentPath)
+		return
+	}
+
+	// Otherwise handle as grove resource
+	s.handleGroveByIDInternal(w, r, groveID, subPath)
+}
+
+// handleGroveByIDInternal handles grove resource operations
+func (s *Server) handleGroveByIDInternal(w http.ResponseWriter, r *http.Request, groveID, subPath string) {
+	// Only handle if no subpath (direct grove resource)
+	if subPath != "" {
+		NotFound(w, "Grove resource")
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		s.getGrove(w, r, groveID)
+	case http.MethodPatch:
+		s.updateGrove(w, r, groveID)
+	case http.MethodDelete:
+		s.deleteGrove(w, r, groveID)
+	default:
+		MethodNotAllowed(w)
+	}
+}
+
+// handleGroveAgents handles agent operations scoped to a grove
+// Path: /api/v1/groves/{groveId}/agents[/{agentId}[/{action}]]
+func (s *Server) handleGroveAgents(w http.ResponseWriter, r *http.Request, groveID, agentPath string) {
+	ctx := r.Context()
+
+	// Verify grove exists
+	grove, err := s.store.GetGrove(ctx, groveID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			NotFound(w, "Grove")
+			return
+		}
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// No agent ID - list or create agents in this grove
+	if agentPath == "" {
+		switch r.Method {
+		case http.MethodGet:
+			s.listGroveAgents(w, r, grove.ID)
+		case http.MethodPost:
+			s.createGroveAgent(w, r, grove.ID)
+		default:
+			MethodNotAllowed(w)
+		}
+		return
+	}
+
+	// Parse agent ID and action
+	parts := strings.SplitN(agentPath, "/", 2)
+	agentIDRaw := parts[0]
+	action := ""
+	if len(parts) > 1 {
+		action = parts[1]
+	}
+
+	// Handle actions
+	if action != "" {
+		s.handleGroveAgentAction(w, r, grove.ID, agentIDRaw, action)
+		return
+	}
+
+	// Handle agent by ID within grove
+	switch r.Method {
+	case http.MethodGet:
+		s.getGroveAgent(w, r, grove.ID, agentIDRaw)
+	case http.MethodPatch:
+		s.updateGroveAgent(w, r, grove.ID, agentIDRaw)
+	case http.MethodDelete:
+		s.deleteGroveAgent(w, r, grove.ID, agentIDRaw)
+	default:
+		MethodNotAllowed(w)
+	}
+}
+
+// listGroveAgents lists agents within a specific grove
+func (s *Server) listGroveAgents(w http.ResponseWriter, r *http.Request, groveID string) {
+	ctx := r.Context()
+	query := r.URL.Query()
+
+	filter := store.AgentFilter{
+		GroveID:       groveID,
+		RuntimeHostID: query.Get("runtimeHostId"),
+		Status:        query.Get("status"),
+	}
+
+	limit := 50
+	if l := query.Get("limit"); l != "" {
+		if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+
+	result, err := s.store.ListAgents(ctx, filter, store.ListOptions{
+		Limit:  limit,
+		Cursor: query.Get("cursor"),
+	})
+	if err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, ListAgentsResponse{
+		Agents:     result.Items,
+		NextCursor: result.NextCursor,
+		TotalCount: result.TotalCount,
+	})
+}
+
+// createGroveAgent creates an agent within a specific grove
+func (s *Server) createGroveAgent(w http.ResponseWriter, r *http.Request, groveID string) {
+	ctx := r.Context()
+
+	var req CreateAgentRequest
+	if err := readJSON(r, &req); err != nil {
+		BadRequest(w, "Invalid request body: "+err.Error())
+		return
+	}
+
+	// Validate required fields
+	if req.Name == "" {
+		ValidationError(w, "name is required", nil)
+		return
+	}
+
+	// Use grove ID from URL path (ignore any groveId in request body)
+	// This ensures RESTful consistency
+
+	// Create agent
+	agent := &store.Agent{
+		ID:         api.NewUUID(),
+		AgentID:    api.Slugify(req.Name),
+		Name:       req.Name,
+		Template:   req.Template,
+		GroveID:    groveID,
+		Status:     store.AgentStatusPending,
+		Labels:     req.Labels,
+		Visibility: store.VisibilityPrivate,
+	}
+
+	if req.Config != nil {
+		agent.Image = req.Config.Image
+		if req.Config.Detached != nil {
+			agent.Detached = *req.Config.Detached
+		} else {
+			agent.Detached = true
+		}
+		agent.AppliedConfig = &store.AgentAppliedConfig{
+			Image:   req.Config.Image,
+			Env:     req.Config.Env,
+			Model:   req.Config.Model,
+			Harness: req.Template,
+		}
+	} else {
+		agent.Detached = true
+	}
+
+	if err := s.store.CreateAgent(ctx, agent); err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// If a dispatcher is available (co-located runtime host), dispatch the agent
+	// This enables zero-friction handoff - the agent will appear in both Hub and Runtime Host
+	var warnings []string
+	if dispatcher := s.GetDispatcher(); dispatcher != nil {
+		if err := dispatcher.DispatchAgentCreate(ctx, agent); err != nil {
+			// Log the error but don't fail the request - agent is created in Hub
+			warnings = append(warnings, "Failed to dispatch to runtime host: "+err.Error())
+			// The agent remains in pending status
+		} else {
+			// Update agent status to reflect it's being started
+			agent.Status = store.AgentStatusProvisioning
+			if err := s.store.UpdateAgent(ctx, agent); err != nil {
+				warnings = append(warnings, "Failed to update agent status: "+err.Error())
+			}
+		}
+	}
+
+	writeJSON(w, http.StatusCreated, CreateAgentResponse{
+		Agent:    agent,
+		Warnings: warnings,
+	})
+}
+
+// getGroveAgent gets an agent by ID within a specific grove
+func (s *Server) getGroveAgent(w http.ResponseWriter, r *http.Request, groveID, agentID string) {
+	ctx := r.Context()
+
+	// Try to get by slug first (more common case)
+	agent, err := s.store.GetAgentBySlug(ctx, groveID, agentID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			// Try by UUID
+			agent, err = s.store.GetAgent(ctx, agentID)
+			if err != nil {
+				writeErrorFromErr(w, err, "")
+				return
+			}
+			// Verify it belongs to this grove
+			if agent.GroveID != groveID {
+				NotFound(w, "Agent")
+				return
+			}
+		} else {
+			writeErrorFromErr(w, err, "")
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, agent)
+}
+
+// updateGroveAgent updates an agent within a specific grove
+func (s *Server) updateGroveAgent(w http.ResponseWriter, r *http.Request, groveID, agentID string) {
+	ctx := r.Context()
+
+	// Try to get by slug first
+	agent, err := s.store.GetAgentBySlug(ctx, groveID, agentID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			// Try by UUID
+			agent, err = s.store.GetAgent(ctx, agentID)
+			if err != nil {
+				writeErrorFromErr(w, err, "")
+				return
+			}
+			if agent.GroveID != groveID {
+				NotFound(w, "Agent")
+				return
+			}
+		} else {
+			writeErrorFromErr(w, err, "")
+			return
+		}
+	}
+
+	var updates struct {
+		Name         string            `json:"name,omitempty"`
+		Labels       map[string]string `json:"labels,omitempty"`
+		Annotations  map[string]string `json:"annotations,omitempty"`
+		TaskSummary  string            `json:"taskSummary,omitempty"`
+		StateVersion int64             `json:"stateVersion"`
+	}
+
+	if err := readJSON(r, &updates); err != nil {
+		BadRequest(w, "Invalid request body: "+err.Error())
+		return
+	}
+
+	// Check version for optimistic locking
+	if updates.StateVersion != 0 && updates.StateVersion != agent.StateVersion {
+		Conflict(w, "Version conflict - resource was modified")
+		return
+	}
+
+	// Apply updates
+	if updates.Name != "" {
+		agent.Name = updates.Name
+	}
+	if updates.Labels != nil {
+		agent.Labels = updates.Labels
+	}
+	if updates.Annotations != nil {
+		agent.Annotations = updates.Annotations
+	}
+	if updates.TaskSummary != "" {
+		agent.TaskSummary = updates.TaskSummary
+	}
+
+	if err := s.store.UpdateAgent(ctx, agent); err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, agent)
+}
+
+// deleteGroveAgent deletes an agent within a specific grove
+func (s *Server) deleteGroveAgent(w http.ResponseWriter, r *http.Request, groveID, agentID string) {
+	ctx := r.Context()
+
+	// Try to get by slug first to verify grove membership
+	agent, err := s.store.GetAgentBySlug(ctx, groveID, agentID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			// Try by UUID
+			agent, err = s.store.GetAgent(ctx, agentID)
+			if err != nil {
+				writeErrorFromErr(w, err, "")
+				return
+			}
+			if agent.GroveID != groveID {
+				NotFound(w, "Agent")
+				return
+			}
+		} else {
+			writeErrorFromErr(w, err, "")
+			return
+		}
+	}
+
+	if err := s.store.DeleteAgent(ctx, agent.ID); err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleGroveAgentAction handles actions on agents within a grove
+func (s *Server) handleGroveAgentAction(w http.ResponseWriter, r *http.Request, groveID, agentID, action string) {
+	if r.Method != http.MethodPost {
+		MethodNotAllowed(w)
+		return
+	}
+
+	ctx := r.Context()
+
+	// Resolve agent ID
+	agent, err := s.store.GetAgentBySlug(ctx, groveID, agentID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			agent, err = s.store.GetAgent(ctx, agentID)
+			if err != nil {
+				writeErrorFromErr(w, err, "")
+				return
+			}
+			if agent.GroveID != groveID {
+				NotFound(w, "Agent")
+				return
+			}
+		} else {
+			writeErrorFromErr(w, err, "")
+			return
+		}
+	}
+
+	switch action {
+	case "status":
+		s.updateAgentStatus(w, r, agent.ID)
+	case "start", "stop", "restart":
+		s.handleAgentLifecycle(w, r, agent.ID, action)
+	default:
+		NotFound(w, "Action")
+	}
+}
+
+// resolveGroveID extracts the UUID from a grove ID that may be in {uuid}__{slug} format
+func resolveGroveID(groveIDRaw string) string {
+	id, _, ok := api.ParseGroveID(groveIDRaw)
+	if ok {
+		return id
+	}
+	// Not in hosted format - return as-is (may be just a UUID or slug)
+	return groveIDRaw
+}
+
+// handleGroveByID is deprecated - use handleGroveRoutes instead
 func (s *Server) handleGroveByID(w http.ResponseWriter, r *http.Request) {
 	id := extractID(r, "/api/v1/groves")
 

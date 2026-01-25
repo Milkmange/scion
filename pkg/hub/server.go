@@ -46,6 +46,14 @@ func DefaultServerConfig() ServerConfig {
 	}
 }
 
+// AgentDispatcher is the interface for dispatching agent operations to a runtime host.
+// When a runtime host is co-located with the hub, this enables zero-friction agent handoff.
+type AgentDispatcher interface {
+	// DispatchAgentCreate creates and starts an agent on the runtime host.
+	// Returns the updated agent info after creation/start.
+	DispatchAgentCreate(ctx context.Context, agent *store.Agent) error
+}
+
 // Server is the Hub API HTTP server.
 type Server struct {
 	config     ServerConfig
@@ -54,6 +62,7 @@ type Server struct {
 	mux        *http.ServeMux
 	mu         sync.RWMutex
 	startTime  time.Time
+	dispatcher AgentDispatcher // Optional dispatcher for co-located runtime host
 }
 
 // New creates a new Hub API server.
@@ -68,6 +77,20 @@ func New(cfg ServerConfig, s store.Store) *Server {
 	srv.registerRoutes()
 
 	return srv
+}
+
+// SetDispatcher sets the agent dispatcher for co-located runtime host operations.
+func (s *Server) SetDispatcher(d AgentDispatcher) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.dispatcher = d
+}
+
+// GetDispatcher returns the current agent dispatcher.
+func (s *Server) GetDispatcher() AgentDispatcher {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.dispatcher
 }
 
 // Start starts the HTTP server.
@@ -139,7 +162,9 @@ func (s *Server) registerRoutes() {
 
 	s.mux.HandleFunc("/api/v1/groves", s.handleGroves)
 	s.mux.HandleFunc("/api/v1/groves/register", s.handleGroveRegister)
-	s.mux.HandleFunc("/api/v1/groves/", s.handleGroveByID)
+	// Grove-nested agent routes: /api/v1/groves/{groveId}/agents
+	// This handler must come before the generic grove-by-id handler
+	s.mux.HandleFunc("/api/v1/groves/", s.handleGroveRoutes)
 
 	s.mux.HandleFunc("/api/v1/runtime-hosts", s.handleRuntimeHosts)
 	s.mux.HandleFunc("/api/v1/runtime-hosts/", s.handleRuntimeHostByID)
