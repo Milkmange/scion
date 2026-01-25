@@ -143,6 +143,8 @@ Expected response (empty initially):
 
 Agents can be created directly via the Runtime Host API, or through the Hub API with grove-scoped endpoints.
 
+**Via Runtime Host API (direct):**
+
 ```bash
 curl -s -X POST http://localhost:9800/api/v1/agents \
   -H "Content-Type: application/json" \
@@ -154,6 +156,14 @@ curl -s -X POST http://localhost:9800/api/v1/agents \
     }
   }' | jq
 ```
+
+**Via Hub API (requires grove and runtime host):**
+
+When creating agents via the Hub API, you must either:
+1. Specify a `runtimeHostId` explicitly, OR
+2. Use a grove that has a default runtime host configured (set when the first host registers)
+
+If neither is available, you'll receive a `no_runtime_host` error with a list of available alternatives.
 
 Expected response:
 ```json
@@ -274,11 +284,18 @@ curl -s http://localhost:9810/api/v1/groves | jq '.groves[] | select(.slug == "g
 
 When you create an agent via the Hub API while a co-located runtime host is running, the agent is automatically dispatched to the runtime host and started.
 
+**Runtime Host Resolution:**
+
+Agents created via the Hub API require a runtime host. The Hub resolves the runtime host in this order:
+1. Use the explicitly specified `runtimeHostId` if provided
+2. Fall back to the grove's `defaultRuntimeHostId` (set when the first host registers)
+3. Return an error with available alternatives if neither is available
+
 ```bash
 # Get the global grove ID
 GROVE_ID=$(curl -s http://localhost:9810/api/v1/groves | jq -r '.groves[] | select(.slug == "global") | .id')
 
-# Create an agent in the global grove
+# Create an agent in the global grove (uses default runtime host)
 curl -s -X POST http://localhost:9810/api/v1/agents \
   -H "Content-Type: application/json" \
   -d "{
@@ -288,7 +305,24 @@ curl -s -X POST http://localhost:9810/api/v1/agents \
   }" | jq
 ```
 
-The agent will be created and automatically started on the co-located runtime host. The response includes the agent with status "provisioning" or "running".
+**Specifying a runtime host explicitly:**
+
+```bash
+# Get available runtime hosts for the grove
+HOST_ID=$(curl -s "http://localhost:9810/api/v1/runtime-hosts?groveId=$GROVE_ID" | jq -r '.hosts[0].id')
+
+# Create an agent with explicit runtime host
+curl -s -X POST http://localhost:9810/api/v1/agents \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"name\": \"Feature Agent\",
+    \"groveId\": \"$GROVE_ID\",
+    \"runtimeHostId\": \"$HOST_ID\",
+    \"template\": \"claude\"
+  }" | jq
+```
+
+The agent will be created and automatically started on the co-located runtime host. The response includes the agent with status "provisioning" or "running" and the assigned `runtimeHostId`.
 
 ### Step 2b: Create Agent via Grove-Scoped Endpoint (Alternative)
 
@@ -409,6 +443,56 @@ Expected response (405):
 ```
 
 ## 7. Error Handling
+
+### No Runtime Host Available
+
+When creating an agent via the Hub API without a runtime host configured:
+
+```bash
+# Try to create agent for a grove with no registered hosts
+curl -s -X POST http://localhost:9810/api/v1/agents \
+  -H "Content-Type: application/json" \
+  -d '{"name": "orphan-agent", "groveId": "grove-with-no-hosts"}' | jq
+```
+
+Expected response (422):
+```json
+{
+  "error": {
+    "code": "no_runtime_host",
+    "message": "No runtime hosts available for this grove; register a runtime host first",
+    "details": {
+      "availableHosts": []
+    }
+  }
+}
+```
+
+### Runtime Host Unavailable
+
+When specifying a runtime host that is offline or not a contributor:
+
+```bash
+curl -s -X POST http://localhost:9810/api/v1/agents \
+  -H "Content-Type: application/json" \
+  -d '{"name": "test", "groveId": "grove123", "runtimeHostId": "offline-host"}' | jq
+```
+
+Expected response (503):
+```json
+{
+  "error": {
+    "code": "runtime_host_unavailable",
+    "message": "Specified runtime host is unavailable",
+    "details": {
+      "requestedHostId": "offline-host",
+      "availableHosts": [
+        {"id": "host_abc", "name": "My Mac", "type": "container", "status": "online"}
+      ]
+    }
+  }
+}
+```
 
 ### Agent Not Found
 

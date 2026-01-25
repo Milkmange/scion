@@ -82,6 +82,11 @@ type Grove struct {
 	// Git integration
 	GitRemote string `json:"gitRemote,omitempty"` // Normalized git remote URL (unique)
 
+	// Runtime host configuration
+	// DefaultRuntimeHostID is the runtime host used when creating agents without
+	// an explicit runtimeHostId. Set to the first host that registers with this grove.
+	DefaultRuntimeHostID string `json:"defaultRuntimeHostId,omitempty"`
+
 	// Metadata (stored as JSON)
 	Labels      map[string]string `json:"labels,omitempty"`
 	Annotations map[string]string `json:"annotations,omitempty"`

@@ -50,6 +50,7 @@ func (s *SQLiteStore) Ping(ctx context.Context) error {
 func (s *SQLiteStore) Migrate(ctx context.Context) error {
 	migrations := []string{
 		migrationV1,
+		migrationV2,
 	}
 
 	// Create migrations table if not exists
@@ -226,6 +227,13 @@ CREATE TABLE IF NOT EXISTS users (
 	last_login TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+`
+
+// Migration V2: Add default_runtime_host_id to groves
+const migrationV2 = `
+-- Add default runtime host to groves
+ALTER TABLE groves ADD COLUMN default_runtime_host_id TEXT REFERENCES runtime_hosts(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_groves_default_runtime_host ON groves(default_runtime_host_id);
 `
 
 // Helper functions for JSON marshaling/unmarshaling
@@ -601,10 +609,10 @@ func (s *SQLiteStore) CreateGrove(ctx context.Context, grove *store.Grove) error
 	grove.Updated = now
 
 	_, err := s.db.ExecContext(ctx, `
-		INSERT INTO groves (id, name, slug, git_remote, labels, annotations, created_at, updated_at, created_by, owner_id, visibility)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO groves (id, name, slug, git_remote, default_runtime_host_id, labels, annotations, created_at, updated_at, created_by, owner_id, visibility)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`,
-		grove.ID, grove.Name, grove.Slug, nullableString(grove.GitRemote),
+		grove.ID, grove.Name, grove.Slug, nullableString(grove.GitRemote), nullableString(grove.DefaultRuntimeHostID),
 		marshalJSON(grove.Labels), marshalJSON(grove.Annotations),
 		grove.Created, grove.Updated, grove.CreatedBy, grove.OwnerID, grove.Visibility,
 	)
@@ -620,13 +628,13 @@ func (s *SQLiteStore) CreateGrove(ctx context.Context, grove *store.Grove) error
 func (s *SQLiteStore) GetGrove(ctx context.Context, id string) (*store.Grove, error) {
 	grove := &store.Grove{}
 	var labels, annotations string
-	var gitRemote sql.NullString
+	var gitRemote, defaultRuntimeHostID sql.NullString
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, slug, git_remote, labels, annotations, created_at, updated_at, created_by, owner_id, visibility
+		SELECT id, name, slug, git_remote, default_runtime_host_id, labels, annotations, created_at, updated_at, created_by, owner_id, visibility
 		FROM groves WHERE id = ?
 	`, id).Scan(
-		&grove.ID, &grove.Name, &grove.Slug, &gitRemote,
+		&grove.ID, &grove.Name, &grove.Slug, &gitRemote, &defaultRuntimeHostID,
 		&labels, &annotations,
 		&grove.Created, &grove.Updated, &grove.CreatedBy, &grove.OwnerID, &grove.Visibility,
 	)
@@ -639,6 +647,9 @@ func (s *SQLiteStore) GetGrove(ctx context.Context, id string) (*store.Grove, er
 
 	if gitRemote.Valid {
 		grove.GitRemote = gitRemote.String
+	}
+	if defaultRuntimeHostID.Valid {
+		grove.DefaultRuntimeHostID = defaultRuntimeHostID.String
 	}
 	unmarshalJSON(labels, &grove.Labels)
 	unmarshalJSON(annotations, &grove.Annotations)
@@ -679,12 +690,12 @@ func (s *SQLiteStore) UpdateGrove(ctx context.Context, grove *store.Grove) error
 
 	result, err := s.db.ExecContext(ctx, `
 		UPDATE groves SET
-			name = ?, slug = ?, git_remote = ?,
+			name = ?, slug = ?, git_remote = ?, default_runtime_host_id = ?,
 			labels = ?, annotations = ?,
 			updated_at = ?, owner_id = ?, visibility = ?
 		WHERE id = ?
 	`,
-		grove.Name, grove.Slug, nullableString(grove.GitRemote),
+		grove.Name, grove.Slug, nullableString(grove.GitRemote), nullableString(grove.DefaultRuntimeHostID),
 		marshalJSON(grove.Labels), marshalJSON(grove.Annotations),
 		grove.Updated, grove.OwnerID, grove.Visibility,
 		grove.ID,
@@ -756,7 +767,7 @@ func (s *SQLiteStore) ListGroves(ctx context.Context, filter store.GroveFilter, 
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, name, slug, git_remote, labels, annotations, created_at, updated_at, created_by, owner_id, visibility
+		SELECT id, name, slug, git_remote, default_runtime_host_id, labels, annotations, created_at, updated_at, created_by, owner_id, visibility
 		FROM groves %s ORDER BY created_at DESC LIMIT ?
 	`, whereClause)
 	args = append(args, limit)
@@ -771,10 +782,10 @@ func (s *SQLiteStore) ListGroves(ctx context.Context, filter store.GroveFilter, 
 	for rows.Next() {
 		var grove store.Grove
 		var labels, annotations string
-		var gitRemote sql.NullString
+		var gitRemote, defaultRuntimeHostID sql.NullString
 
 		if err := rows.Scan(
-			&grove.ID, &grove.Name, &grove.Slug, &gitRemote,
+			&grove.ID, &grove.Name, &grove.Slug, &gitRemote, &defaultRuntimeHostID,
 			&labels, &annotations,
 			&grove.Created, &grove.Updated, &grove.CreatedBy, &grove.OwnerID, &grove.Visibility,
 		); err != nil {
@@ -783,6 +794,9 @@ func (s *SQLiteStore) ListGroves(ctx context.Context, filter store.GroveFilter, 
 
 		if gitRemote.Valid {
 			grove.GitRemote = gitRemote.String
+		}
+		if defaultRuntimeHostID.Valid {
+			grove.DefaultRuntimeHostID = defaultRuntimeHostID.String
 		}
 		unmarshalJSON(labels, &grove.Labels)
 		unmarshalJSON(annotations, &grove.Annotations)

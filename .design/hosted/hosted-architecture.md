@@ -120,9 +120,11 @@ The grove is the **primary unit of registration** with the Hub. A grove represen
 
 *   **Identity:** Groves with git repositories are uniquely identified by their normalized git remote URL. This is enforced at the Hub level.
 *   **Distributed:** A grove can span multiple runtime hosts. Each host that registers the same grove (identified by git remote) becomes a contributor.
+*   **Default Runtime Host:** Each grove has a default runtime host (`defaultRuntimeHostId`) that is used when creating agents without an explicit host. This is automatically set to the first runtime host that registers with the grove.
 *   **Profiles:** Runtime configuration (Docker vs K8s, resource limits, etc.) is defined per-grove in the settings file. Hosts advertise which profiles they can execute.
 *   **Hub Record:** The Hub maintains:
     *   Grove metadata (name, slug, git remote, owner)
+    *   Default runtime host ID for agent creation
     *   List of contributing hosts
     *   Aggregate agent count and status
 
@@ -168,22 +170,55 @@ The browser-based dashboard for user interaction. Detailed specifications are in
     *   Looks up existing grove by git remote URL.
     *   If found: adds this host as a contributor to the existing grove.
     *   If not found: creates a new grove record with this host as the initial contributor.
+    *   If the grove has no `defaultRuntimeHostId`, sets this host as the default.
     *   Returns grove ID and host authentication token.
 5.  **Runtime Host** stores the grove ID and token for subsequent operations.
 
 ### 5.2. Agent Creation (Hosted/Distributed)
-1.  **User** requests agent creation via Scion Hub API, specifying grove and optionally a profile/host.
-2.  **Scion Hub**:
-    *   Creates `Agent` record (Status: `PROVISIONING`).
-    *   Selects a target **Runtime Host** from the grove's contributors (based on profile compatibility, capacity, or user selection).
+1.  **User** requests agent creation via Scion Hub API, specifying grove and optionally a `runtimeHostId`.
+2.  **Scion Hub** resolves the runtime host:
+    *   If `runtimeHostId` is explicitly provided, verify it's a valid, online contributor to the grove.
+    *   Otherwise, use the grove's `defaultRuntimeHostId` (set when the first host registers).
+    *   If the resolved host is unavailable or no host is configured, return an error with a list of available alternatives.
+3.  **Scion Hub**:
+    *   Creates `Agent` record with the resolved `runtimeHostId` (Status: `PENDING`).
     *   Sends `CreateAgent` command to the Runtime Host.
-3.  **Runtime Host**:
+    *   Updates status to `PROVISIONING` on successful dispatch.
+4.  **Runtime Host**:
     *   Allocates resources (PVC, Container) according to the selected profile.
     *   Starts the Agent.
     *   Injects Hub connection details.
-4.  **Agent**:
+5.  **Agent**:
     *   Starts up.
     *   `sciontool` reports `RUNNING` status to Scion Hub.
+
+```mermaid
+sequenceDiagram
+    participant User as User/CLI
+    participant Hub as Scion Hub
+    participant DB as Database
+    participant Host as Runtime Host
+
+    User->>Hub: POST /agents (groveId, [runtimeHostId])
+    Hub->>DB: Get grove + contributors
+    DB-->>Hub: Grove (defaultRuntimeHostId) + online hosts
+
+    alt runtimeHostId specified
+        Hub->>Hub: Verify host is online contributor
+    else use default
+        Hub->>Hub: Use grove.defaultRuntimeHostId
+    end
+
+    alt host unavailable
+        Hub-->>User: 422/503 + availableHosts list
+    else host available
+        Hub->>DB: Create agent (status: pending, runtimeHostId)
+        Hub->>Host: DispatchAgentCreate
+        Host-->>Hub: Success
+        Hub->>DB: Update status: provisioning
+        Hub-->>User: 201 Created + agent
+    end
+```
 
 ### 5.3. Web PTY Attachment
 1.  **User** connects to Scion Hub WebSocket for a specific agent.

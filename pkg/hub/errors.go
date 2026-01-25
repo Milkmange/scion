@@ -24,18 +24,20 @@ type ErrorResponse struct {
 
 // Error codes matching the Hub API specification.
 const (
-	ErrCodeInvalidRequest  = "invalid_request"
-	ErrCodeValidationError = "validation_error"
-	ErrCodeUnauthorized    = "unauthorized"
-	ErrCodeForbidden       = "forbidden"
-	ErrCodeNotFound        = "not_found"
-	ErrCodeConflict        = "conflict"
-	ErrCodeVersionConflict = "version_conflict"
-	ErrCodeUnprocessable   = "unprocessable"
-	ErrCodeRateLimited     = "rate_limited"
-	ErrCodeInternalError   = "internal_error"
-	ErrCodeRuntimeError    = "runtime_error"
-	ErrCodeUnavailable     = "unavailable"
+	ErrCodeInvalidRequest       = "invalid_request"
+	ErrCodeValidationError      = "validation_error"
+	ErrCodeUnauthorized         = "unauthorized"
+	ErrCodeForbidden            = "forbidden"
+	ErrCodeNotFound             = "not_found"
+	ErrCodeConflict             = "conflict"
+	ErrCodeVersionConflict      = "version_conflict"
+	ErrCodeUnprocessable        = "unprocessable"
+	ErrCodeRateLimited          = "rate_limited"
+	ErrCodeInternalError        = "internal_error"
+	ErrCodeRuntimeError         = "runtime_error"
+	ErrCodeUnavailable          = "unavailable"
+	ErrCodeNoRuntimeHost        = "no_runtime_host"
+	ErrCodeRuntimeHostUnavail   = "runtime_host_unavailable"
 )
 
 // writeError writes a JSON error response.
@@ -139,4 +141,32 @@ func InternalError(w http.ResponseWriter) {
 func MethodNotAllowed(w http.ResponseWriter) {
 	writeError(w, http.StatusMethodNotAllowed, "method_not_allowed",
 		"Method not allowed", nil)
+}
+
+// NoRuntimeHost writes a 422 Unprocessable Entity response when no runtime host
+// is available for agent creation. Includes available hosts as alternatives.
+func NoRuntimeHost(w http.ResponseWriter, message string, availableHosts []RuntimeHostSummary) {
+	details := map[string]interface{}{
+		"availableHosts": availableHosts,
+	}
+	writeError(w, http.StatusUnprocessableEntity, ErrCodeNoRuntimeHost, message, details)
+}
+
+// RuntimeHostUnavailable writes a 503 Service Unavailable response when the
+// specified runtime host is not available.
+func RuntimeHostUnavailable(w http.ResponseWriter, hostID string, availableHosts []RuntimeHostSummary) {
+	details := map[string]interface{}{
+		"requestedHostId": hostID,
+		"availableHosts":  availableHosts,
+	}
+	writeError(w, http.StatusServiceUnavailable, ErrCodeRuntimeHostUnavail,
+		"Specified runtime host is unavailable", details)
+}
+
+// RuntimeHostSummary is a minimal representation of a runtime host for error responses.
+type RuntimeHostSummary struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }

@@ -156,17 +156,43 @@ func TestAgentCreate(t *testing.T) {
 	srv, s := testServer(t)
 	ctx := context.Background()
 
-	// Create a grove first
+	// Create a runtime host first
+	host := &store.RuntimeHost{
+		ID:     "host_test123",
+		Slug:   "test-host",
+		Name:   "Test Host",
+		Type:   "docker",
+		Mode:   store.HostModeConnected,
+		Status: store.HostStatusOnline,
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	// Create a grove with default runtime host
 	grove := &store.Grove{
-		ID:        "grove_abc123",
-		Slug:      "my-grove",
-		Name:      "My Grove",
-		GitRemote: "github.com/test/repo",
-		Created:   time.Now(),
-		Updated:   time.Now(),
+		ID:                   "grove_abc123",
+		Slug:                 "my-grove",
+		Name:                 "My Grove",
+		GitRemote:            "github.com/test/repo",
+		DefaultRuntimeHostID: host.ID,
+		Created:              time.Now(),
+		Updated:              time.Now(),
 	}
 	if err := s.CreateGrove(ctx, grove); err != nil {
 		t.Fatalf("failed to create grove: %v", err)
+	}
+
+	// Register the host as a contributor to the grove
+	contrib := &store.GroveContributor{
+		GroveID:  grove.ID,
+		HostID:   host.ID,
+		HostName: host.Name,
+		Mode:     host.Mode,
+		Status:   store.HostStatusOnline,
+	}
+	if err := s.AddGroveContributor(ctx, contrib); err != nil {
+		t.Fatalf("failed to add grove contributor: %v", err)
 	}
 
 	body := map[string]interface{}{
@@ -199,6 +225,10 @@ func TestAgentCreate(t *testing.T) {
 
 	if resp.Agent.Status != store.AgentStatusPending {
 		t.Errorf("expected status 'pending', got %q", resp.Agent.Status)
+	}
+
+	if resp.Agent.RuntimeHostID != host.ID {
+		t.Errorf("expected runtimeHostId %q, got %q", host.ID, resp.Agent.RuntimeHostID)
 	}
 }
 

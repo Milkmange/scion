@@ -1,6 +1,7 @@
 package hub
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -105,14 +106,15 @@ type ListAgentsResponse struct {
 }
 
 type CreateAgentRequest struct {
-	Name      string            `json:"name"`
-	GroveID   string            `json:"groveId"`
-	Template  string            `json:"template"`
-	Task      string            `json:"task,omitempty"`
-	Branch    string            `json:"branch,omitempty"`
-	Workspace string            `json:"workspace,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	Config    *AgentConfigOverride `json:"config,omitempty"`
+	Name          string            `json:"name"`
+	GroveID       string            `json:"groveId"`
+	RuntimeHostID string            `json:"runtimeHostId,omitempty"` // Optional: uses grove's default if not specified
+	Template      string            `json:"template"`
+	Task          string            `json:"task,omitempty"`
+	Branch        string            `json:"branch,omitempty"`
+	Workspace     string            `json:"workspace,omitempty"`
+	Labels        map[string]string `json:"labels,omitempty"`
+	Config        *AgentConfigOverride `json:"config,omitempty"`
 }
 
 type AgentConfigOverride struct {
@@ -190,8 +192,9 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify grove exists
-	if _, err := s.store.GetGrove(ctx, req.GroveID); err != nil {
+	// Verify grove exists and get its configuration
+	grove, err := s.store.GetGrove(ctx, req.GroveID)
+	if err != nil {
 		if err == store.ErrNotFound {
 			NotFound(w, "Grove")
 			return
@@ -200,16 +203,24 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolve the runtime host
+	runtimeHostID, err := s.resolveRuntimeHost(ctx, w, req.RuntimeHostID, grove)
+	if err != nil {
+		// Error response already written by resolveRuntimeHost
+		return
+	}
+
 	// Create agent
 	agent := &store.Agent{
-		ID:         api.NewUUID(),
-		AgentID:    api.Slugify(req.Name),
-		Name:       req.Name,
-		Template:   req.Template,
-		GroveID:    req.GroveID,
-		Status:     store.AgentStatusPending,
-		Labels:     req.Labels,
-		Visibility: store.VisibilityPrivate,
+		ID:            api.NewUUID(),
+		AgentID:       api.Slugify(req.Name),
+		Name:          req.Name,
+		Template:      req.Template,
+		GroveID:       req.GroveID,
+		RuntimeHostID: runtimeHostID,
+		Status:        store.AgentStatusPending,
+		Labels:        req.Labels,
+		Visibility:    store.VisibilityPrivate,
 	}
 
 	if req.Config != nil {
@@ -659,6 +670,16 @@ func (s *Server) handleGroveRegister(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// Set as default runtime host if grove doesn't have one
+		// (first host to register becomes the default)
+		if grove.DefaultRuntimeHostID == "" {
+			grove.DefaultRuntimeHostID = host.ID
+			if err := s.store.UpdateGrove(ctx, grove); err != nil {
+				// Log but don't fail - the host is registered, default can be set later
+				// In production, log this error
+			}
+		}
+
 		// Generate a simple token (in production, use proper token generation)
 		hostToken = "host_" + api.NewShortID() + "_" + api.NewShortID()
 	}
@@ -837,19 +858,35 @@ func (s *Server) createGroveAgent(w http.ResponseWriter, r *http.Request, groveI
 		return
 	}
 
-	// Use grove ID from URL path (ignore any groveId in request body)
-	// This ensures RESTful consistency
+	// Get grove to access its configuration (including default runtime host)
+	grove, err := s.store.GetGrove(ctx, groveID)
+	if err != nil {
+		if err == store.ErrNotFound {
+			NotFound(w, "Grove")
+			return
+		}
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// Resolve the runtime host
+	runtimeHostID, err := s.resolveRuntimeHost(ctx, w, req.RuntimeHostID, grove)
+	if err != nil {
+		// Error response already written by resolveRuntimeHost
+		return
+	}
 
 	// Create agent
 	agent := &store.Agent{
-		ID:         api.NewUUID(),
-		AgentID:    api.Slugify(req.Name),
-		Name:       req.Name,
-		Template:   req.Template,
-		GroveID:    groveID,
-		Status:     store.AgentStatusPending,
-		Labels:     req.Labels,
-		Visibility: store.VisibilityPrivate,
+		ID:            api.NewUUID(),
+		AgentID:       api.Slugify(req.Name),
+		Name:          req.Name,
+		Template:      req.Template,
+		GroveID:       groveID,
+		RuntimeHostID: runtimeHostID,
+		Status:        store.AgentStatusPending,
+		Labels:        req.Labels,
+		Visibility:    store.VisibilityPrivate,
 	}
 
 	if req.Config != nil {
@@ -1630,6 +1667,95 @@ func (s *Server) deleteUser(w http.ResponseWriter, r *http.Request, id string) {
 // ============================================================================
 // Helpers
 // ============================================================================
+
+// resolveRuntimeHost determines which runtime host should run the agent.
+// It checks the explicitly specified host, the grove's default, or returns an error
+// with available alternatives if none is available.
+// Returns the runtime host ID or an error (after writing the HTTP error response).
+func (s *Server) resolveRuntimeHost(ctx context.Context, w http.ResponseWriter, requestedHostID string, grove *store.Grove) (string, error) {
+	// Get available hosts for this grove (online hosts that are contributors)
+	availableHosts, err := s.getAvailableHostsForGrove(ctx, grove.ID)
+	if err != nil {
+		writeErrorFromErr(w, err, "")
+		return "", err
+	}
+
+	// Convert to summary for error responses
+	hostSummaries := make([]RuntimeHostSummary, len(availableHosts))
+	for i, h := range availableHosts {
+		hostSummaries[i] = RuntimeHostSummary{
+			ID:     h.ID,
+			Name:   h.Name,
+			Type:   h.Type,
+			Status: h.Status,
+		}
+	}
+
+	// Case 1: Explicit runtime host specified
+	if requestedHostID != "" {
+		// Check if the requested host is available
+		for _, h := range availableHosts {
+			if h.ID == requestedHostID {
+				return requestedHostID, nil
+			}
+		}
+		// Requested host not available
+		RuntimeHostUnavailable(w, requestedHostID, hostSummaries)
+		return "", store.ErrNotFound
+	}
+
+	// Case 2: Use grove's default runtime host
+	if grove.DefaultRuntimeHostID != "" {
+		// Check if the default host is still available
+		for _, h := range availableHosts {
+			if h.ID == grove.DefaultRuntimeHostID {
+				return grove.DefaultRuntimeHostID, nil
+			}
+		}
+		// Default host is not available
+		if len(availableHosts) > 0 {
+			NoRuntimeHost(w, "Default runtime host is unavailable; specify an alternative", hostSummaries)
+		} else {
+			NoRuntimeHost(w, "Default runtime host is unavailable and no alternatives found", hostSummaries)
+		}
+		return "", store.ErrNotFound
+	}
+
+	// Case 3: No default and no explicit host
+	if len(availableHosts) == 0 {
+		NoRuntimeHost(w, "No runtime hosts available for this grove; register a runtime host first", hostSummaries)
+		return "", store.ErrNotFound
+	}
+
+	// No explicit host and no default - this shouldn't happen if registration sets defaults properly
+	NoRuntimeHost(w, "No runtime host specified and grove has no default; specify runtimeHostId or set a default", hostSummaries)
+	return "", store.ErrNotFound
+}
+
+// getAvailableHostsForGrove returns online runtime hosts that are contributors to the grove.
+func (s *Server) getAvailableHostsForGrove(ctx context.Context, groveID string) ([]store.RuntimeHost, error) {
+	// Get contributors for this grove
+	contributors, err := s.store.GetGroveContributors(ctx, groveID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter to online hosts and fetch their full details
+	var availableHosts []store.RuntimeHost
+	for _, contrib := range contributors {
+		if contrib.Status == store.HostStatusOnline {
+			host, err := s.store.GetRuntimeHost(ctx, contrib.HostID)
+			if err != nil {
+				continue // Skip hosts we can't fetch
+			}
+			if host.Status == store.HostStatusOnline {
+				availableHosts = append(availableHosts, *host)
+			}
+		}
+	}
+
+	return availableHosts, nil
+}
 
 // normalizeGitRemote normalizes a git remote URL for consistent matching.
 // Examples:
