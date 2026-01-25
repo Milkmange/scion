@@ -390,7 +390,7 @@ curl -s "http://localhost:9810/api/v1/agents?groveId=$GROVE_ID" | jq
 
 ### Step 5: Register Additional Groves (Optional)
 
-For project-specific groves, you can still manually register them:
+For project-specific groves, you can manually register them with a local path. The `path` field specifies where the grove is located on this host:
 
 ```bash
 curl -s -X POST http://localhost:9810/api/v1/groves/register \
@@ -398,6 +398,7 @@ curl -s -X POST http://localhost:9810/api/v1/groves/register \
   -d '{
     "gitRemote": "https://github.com/myorg/myproject.git",
     "name": "My Project",
+    "path": "/path/to/myproject/.scion",
     "mode": "connected",
     "host": {
       "name": "My MacBook",
@@ -476,6 +477,42 @@ echo "Project Grove ID: $PROJECT_GROVE_ID"
 # The contributor record should now include the local path
 curl -s "http://localhost:9810/api/v1/runtime-hosts?groveId=$PROJECT_GROVE_ID" | jq
 ```
+
+Expected response (note the `localPath` field included for each host):
+```json
+{
+  "hosts": [
+    {
+      "id": "7d2bdf70-a975-4e7d-930c-2b67448ed8f6",
+      "name": "Local Mac",
+      "slug": "local-mac",
+      "type": "container",
+      "mode": "connected",
+      "version": "0.1.0",
+      "status": "online",
+      "connectionState": "connected",
+      "lastHeartbeat": "0001-01-01T00:00:00Z",
+      "capabilities": {
+        "webPty": false,
+        "sync": true,
+        "attach": true
+      },
+      "runtimes": [
+        {
+          "type": "container",
+          "available": true
+        }
+      ],
+      "localPath": "/Users/ptone/src/cli-projects/qa-scion/.scion",
+      "created": "2026-01-25T11:22:02.903695-08:00",
+      "updated": "2026-01-25T11:29:46.819009-08:00"
+    }
+  ],
+  "totalCount": 1
+}
+```
+
+The `localPath` field is included when querying runtime hosts filtered by `groveId`, providing the grove-specific filesystem path for each host contributor.
 
 ### Step 4: Create an Agent in the Project Grove
 

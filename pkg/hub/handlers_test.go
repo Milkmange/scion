@@ -565,6 +565,93 @@ func TestRuntimeHostGetByID(t *testing.T) {
 	}
 }
 
+func TestRuntimeHostListWithGroveLocalPath(t *testing.T) {
+	srv, s := testServer(t)
+	ctx := context.Background()
+
+	// Create a grove
+	grove := &store.Grove{
+		ID:         "grove_localpath_test",
+		Name:       "Local Path Test Grove",
+		Slug:       "local-path-test",
+		Visibility: store.VisibilityPrivate,
+		Created:    time.Now(),
+		Updated:    time.Now(),
+	}
+	if err := s.CreateGrove(ctx, grove); err != nil {
+		t.Fatalf("failed to create grove: %v", err)
+	}
+
+	// Create a runtime host
+	host := &store.RuntimeHost{
+		ID:            "host_localpath_test",
+		Name:          "Local Path Test Host",
+		Slug:          "local-path-test-host",
+		Type:          "docker",
+		Mode:          store.HostModeConnected,
+		Status:        store.HostStatusOnline,
+		LastHeartbeat: time.Now(),
+		Created:       time.Now(),
+		Updated:       time.Now(),
+	}
+	if err := s.CreateRuntimeHost(ctx, host); err != nil {
+		t.Fatalf("failed to create runtime host: %v", err)
+	}
+
+	// Add host as grove contributor with a local path
+	contrib := &store.GroveContributor{
+		GroveID:   grove.ID,
+		HostID:    host.ID,
+		HostName:  host.Name,
+		LocalPath: "/path/to/project/.scion",
+		Mode:      store.HostModeConnected,
+		Status:    store.HostStatusOnline,
+	}
+	if err := s.AddGroveContributor(ctx, contrib); err != nil {
+		t.Fatalf("failed to add grove contributor: %v", err)
+	}
+
+	// List runtime hosts filtered by grove - should include localPath
+	rec := doRequest(t, srv, http.MethodGet, "/api/v1/runtime-hosts?groveId=grove_localpath_test", nil)
+
+	if rec.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp ListRuntimeHostsWithContributorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp.Hosts) != 1 {
+		t.Errorf("expected 1 host, got %d", len(resp.Hosts))
+	}
+
+	if resp.Hosts[0].ID != "host_localpath_test" {
+		t.Errorf("expected host ID 'host_localpath_test', got %q", resp.Hosts[0].ID)
+	}
+
+	if resp.Hosts[0].LocalPath != "/path/to/project/.scion" {
+		t.Errorf("expected localPath '/path/to/project/.scion', got %q", resp.Hosts[0].LocalPath)
+	}
+
+	// List all runtime hosts (no grove filter) - should NOT include localPath field structure
+	// (uses ListRuntimeHostsResponse, not ListRuntimeHostsWithContributorResponse)
+	rec2 := doRequest(t, srv, http.MethodGet, "/api/v1/runtime-hosts", nil)
+	if rec2.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d: %s", rec2.Code, rec2.Body.String())
+	}
+
+	var resp2 ListRuntimeHostsResponse
+	if err := json.NewDecoder(rec2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if len(resp2.Hosts) != 1 {
+		t.Errorf("expected 1 host, got %d", len(resp2.Hosts))
+	}
+}
+
 // ============================================================================
 // Template Endpoint Tests
 // ============================================================================

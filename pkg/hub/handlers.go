@@ -1213,6 +1213,21 @@ type ListRuntimeHostsResponse struct {
 	TotalCount int                 `json:"totalCount"`
 }
 
+// RuntimeHostWithContributor extends RuntimeHost with grove-specific contributor data.
+// This is returned when listing hosts filtered by groveId, providing the local path
+// for the grove on each host.
+type RuntimeHostWithContributor struct {
+	store.RuntimeHost
+	LocalPath string `json:"localPath,omitempty"` // Filesystem path to the grove on this host
+}
+
+// ListRuntimeHostsWithContributorResponse is returned when filtering by groveId.
+type ListRuntimeHostsWithContributorResponse struct {
+	Hosts      []RuntimeHostWithContributor `json:"hosts"`
+	NextCursor string                       `json:"nextCursor,omitempty"`
+	TotalCount int                          `json:"totalCount"`
+}
+
 func (s *Server) handleRuntimeHosts(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -1226,11 +1241,12 @@ func (s *Server) listRuntimeHosts(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	query := r.URL.Query()
 
+	groveID := query.Get("groveId")
 	filter := store.RuntimeHostFilter{
 		Type:    query.Get("type"),
 		Status:  query.Get("status"),
 		Mode:    query.Get("mode"),
-		GroveID: query.Get("groveId"),
+		GroveID: groveID,
 	}
 
 	limit := 50
@@ -1246,6 +1262,38 @@ func (s *Server) listRuntimeHosts(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	// If filtering by groveId, include grove-specific contributor data (like localPath)
+	if groveID != "" {
+		// Get contributor data for this grove to include localPath
+		contributors, err := s.store.GetGroveContributors(ctx, groveID)
+		if err != nil {
+			writeErrorFromErr(w, err, "")
+			return
+		}
+
+		// Build a map of hostId -> localPath for quick lookup
+		hostLocalPaths := make(map[string]string)
+		for _, c := range contributors {
+			hostLocalPaths[c.HostID] = c.LocalPath
+		}
+
+		// Build extended host list with contributor data
+		extendedHosts := make([]RuntimeHostWithContributor, 0, len(result.Items))
+		for _, host := range result.Items {
+			extendedHosts = append(extendedHosts, RuntimeHostWithContributor{
+				RuntimeHost: host,
+				LocalPath:   hostLocalPaths[host.ID],
+			})
+		}
+
+		writeJSON(w, http.StatusOK, ListRuntimeHostsWithContributorResponse{
+			Hosts:      extendedHosts,
+			NextCursor: result.NextCursor,
+			TotalCount: result.TotalCount,
+		})
 		return
 	}
 
