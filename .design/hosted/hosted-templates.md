@@ -1038,3 +1038,175 @@ The following questions have been resolved:
 - **Runtime Host API:** `runtime-host-api.md`
 - **Hosted Architecture:** `hosted-architecture.md`
 - **Current Template System:** `pkg/config/embeds/`
+
+---
+
+## Appendix A: Phase 1 QA Walkthrough
+
+This section provides minimal verification steps for the Phase 1 template implementation.
+
+### A.1. Prerequisites
+
+- Go 1.21+ installed
+- `curl` and `jq` available
+
+### A.2. Build and Start the Hub Server
+
+```bash
+# Build from the project root (where go.mod is located)
+go build -buildvcs=false -o scion ./cmd/scion
+
+# Start Hub API server with dev authentication (default port: 9810)
+./scion server start --enable-hub --dev-auth
+
+# The dev-auth token is written to ~/.scion/dev-token
+# Read it for use in API requests:
+TOKEN=$(cat ~/.scion/dev-token)
+echo "Dev token: $TOKEN"
+```
+
+### A.3. Quick Verification Script
+
+Run this script to verify all Phase 1 endpoints work correctly:
+
+```bash
+#!/bin/bash
+set -e
+
+BASE_URL="http://localhost:9810"
+TOKEN=$(cat ~/.scion/dev-token)
+AUTH="Authorization: Bearer $TOKEN"
+
+echo "=== Phase 1 Template Verification ==="
+
+# 1. Health check (no auth required)
+echo -e "\n[1] Health check..."
+curl -sf "$BASE_URL/healthz" > /dev/null && echo "OK" || echo "FAIL"
+
+# 2. Create a template
+echo -e "\n[2] Create template..."
+RESPONSE=$(curl -sf -X POST "$BASE_URL/api/v1/templates" \
+  -H "$AUTH" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "test-claude", "harness": "claude", "scope": "global"}')
+TEMPLATE_ID=$(echo "$RESPONSE" | jq -r '.template.id')
+echo "Created: $TEMPLATE_ID"
+
+# 3. Get template
+echo -e "\n[3] Get template..."
+curl -sf -H "$AUTH" "$BASE_URL/api/v1/templates/$TEMPLATE_ID" | jq '{id, name, scope, storagePath}'
+
+# 4. List templates
+echo -e "\n[4] List templates..."
+COUNT=$(curl -sf -H "$AUTH" "$BASE_URL/api/v1/templates" | jq '.templates | length')
+echo "Template count: $COUNT"
+
+# 5. Update template (PATCH)
+echo -e "\n[5] Patch template..."
+curl -sf -X PATCH "$BASE_URL/api/v1/templates/$TEMPLATE_ID" \
+  -H "$AUTH" \
+  -H "Content-Type: application/json" \
+  -d '{"displayName": "Test Claude Updated"}' | jq '{displayName}'
+
+# 6. Delete template
+echo -e "\n[6] Delete template..."
+HTTP_CODE=$(curl -sf -o /dev/null -w "%{http_code}" -X DELETE -H "$AUTH" "$BASE_URL/api/v1/templates/$TEMPLATE_ID")
+[ "$HTTP_CODE" = "204" ] && echo "Deleted (204)" || echo "FAIL: $HTTP_CODE"
+
+# 7. Verify not found
+echo -e "\n[7] Verify deleted..."
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "$AUTH" "$BASE_URL/api/v1/templates/$TEMPLATE_ID")
+[ "$HTTP_CODE" = "404" ] && echo "Not found (404)" || echo "FAIL: $HTTP_CODE"
+
+# 8. Test validation error (expect 400 with "harness is required")
+echo -e "\n[8] Test validation..."
+ERROR=$(curl -s -X POST "$BASE_URL/api/v1/templates" \
+  -H "$AUTH" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "missing-harness"}')
+echo "$ERROR" | grep -q "harness" && echo "Validation works" || echo "FAIL: $ERROR"
+
+echo -e "\n=== Verification Complete ==="
+```
+
+### A.4. Manual Testing Commands
+
+First, set up the auth header:
+```bash
+TOKEN=$(cat ~/.scion/dev-token)
+AUTH="Authorization: Bearer $TOKEN"
+```
+
+**Create template:**
+```bash
+curl -s -X POST http://localhost:9810/api/v1/templates \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"name": "my-claude", "harness": "claude", "scope": "global"}' | jq
+```
+
+**List templates:**
+```bash
+curl -s -H "$AUTH" "http://localhost:9810/api/v1/templates" | jq '.templates[] | {id, name, scope}'
+```
+
+**Get template:**
+```bash
+curl -s -H "$AUTH" "http://localhost:9810/api/v1/templates/$ID" | jq
+```
+
+**Update template:**
+```bash
+curl -s -X PATCH "http://localhost:9810/api/v1/templates/$ID" \
+  -H "$AUTH" -H "Content-Type: application/json" \
+  -d '{"displayName": "My Custom Claude"}' | jq
+```
+
+**Delete template:**
+```bash
+curl -s -X DELETE -H "$AUTH" "http://localhost:9810/api/v1/templates/$ID" -w "HTTP %{http_code}\n"
+```
+
+**Filter by scope/harness:**
+```bash
+curl -s -H "$AUTH" "http://localhost:9810/api/v1/templates?scope=global&harness=claude" | jq
+```
+
+### A.5. Verify Storage Paths
+
+Templates should generate correct storage paths based on scope:
+
+| Scope | Expected Path Format |
+|-------|----------------------|
+| global | `templates/global/{slug}` |
+| grove | `templates/groves/{scopeId}/{slug}` |
+| user | `templates/users/{scopeId}/{slug}` |
+
+Verify by checking the `storagePath` field in create/get responses.
+
+### A.6. Cleanup
+
+```bash
+# Stop server with Ctrl+C
+
+# Remove test database (if needed)
+rm ~/.scion/hub.db
+```
+
+### A.7. Phase 1 Checklist
+
+| Component | Status |
+|-----------|--------|
+| Template model in database | ✓ Implemented |
+| POST /templates (create) | ✓ Implemented |
+| GET /templates (list with filters) | ✓ Implemented |
+| GET /templates/{id} | ✓ Implemented |
+| PUT /templates/{id} (full update) | ✓ Implemented |
+| PATCH /templates/{id} (partial update) | ✓ Implemented |
+| DELETE /templates/{id} | ✓ Implemented |
+| POST /templates/{id}/upload | ✓ Implemented |
+| POST /templates/{id}/finalize | ✓ Implemented |
+| GET /templates/{id}/download | ✓ Implemented |
+| POST /templates/{id}/clone | ✓ Implemented |
+| Storage interface abstraction | ✓ Implemented |
+| GCS storage provider | ✓ Implemented |
+| Local storage provider | ✓ Implemented |
