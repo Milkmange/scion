@@ -1,4 +1,6 @@
-# Scion Templates Guide
+---
+title: Scion Templates Guide
+---
 
 Templates are the blueprint for your agents. They define the configuration, tools, and environment that an agent will have when it starts. This guide explains how to manage and use templates effectively.
 

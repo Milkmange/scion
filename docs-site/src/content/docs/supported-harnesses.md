@@ -1,4 +1,6 @@
-# Supported Agent Harnesses
+---
+title: Supported Agent Harnesses
+---
 
 Scion supports multiple LLM agent "harnesses". A harness is an adapter that allows Scion to manage the lifecycle, authentication, and configuration of a specific agent tool.
 

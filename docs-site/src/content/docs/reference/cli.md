@@ -1,4 +1,6 @@
-# Scion CLI Reference
+---
+title: Scion CLI Reference
+---
 
 ## `scion start` (or `run`)
 

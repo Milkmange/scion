@@ -13,6 +13,11 @@ TEST_GEMINI_KEY
 # web frontend
 web/node_modules/
 web/dist/
+
+# docs site
+docs-site/node_modules/
+docs-site/dist/
+docs-site/.astro/
 web/.env
 web/.env.local
 web/.env.*.local

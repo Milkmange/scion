@@ -1,0 +1,36 @@
+---
+title: Welcome to Scion
+description: Container-based orchestration for LLM-based code agents.
+template: splash
+hero:
+  tagline: Scion is a container-based orchestration platform designed to manage concurrent LLM-based code agents.
+  image:
+    file: ../../assets/houston.webp
+  actions:
+    - text: Get Started
+      link: /overview/
+      icon: right-arrow
+    - text: View GitHub
+      link: https://github.com/google/scion
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## Core Features
+
+<CardGrid stagger>
+	<Card title="Concurrent Agents" icon="rocket">
+		Run multiple LLM agents in isolated containers.
+	</Card>
+	<Card title="Multiple Runtimes" icon="laptop">
+		Support for Docker, Apple Virtualization Framework, and Kubernetes.
+	</Card>
+	<Card title="Isolated Workspaces" icon="add-document">
+		Git Worktrees ensure isolated code modification for each agent.
+	</Card>
+	<Card title="Hosted Architecture" icon="setting">
+		Centralized state in a Hub with distributed execution on Runtime Hosts.
+	</Card>
+</CardGrid>

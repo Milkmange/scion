@@ -1,4 +1,6 @@
-# Using Tmux with Scion
+---
+title: Using Tmux with Scion
+---
 
 Scion supports wrapping agent sessions in `tmux`, a terminal multiplexer. This enables persistent sessions, shared collaboration, and compatibility with certain runtimes.
 

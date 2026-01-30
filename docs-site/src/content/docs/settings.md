@@ -1,4 +1,6 @@
-# Scion Settings Reference
+---
+title: Scion Settings Reference
+---
 
 Scion's configuration is managed through a hierarchical settings system that allows for flexible definition of Runtimes, Harnesses, and Profiles. This configuration is stored in a `settings.json` file, which can exist at two levels:
 

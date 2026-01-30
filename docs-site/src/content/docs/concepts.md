@@ -1,4 +1,6 @@
-# Scion Concepts
+---
+title: Scion Concepts
+---
 
 This document defines the core concepts and terminology used in Scion.
 

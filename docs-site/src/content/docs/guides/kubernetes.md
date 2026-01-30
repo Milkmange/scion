@@ -1,4 +1,6 @@
-# Running Scion on Kubernetes (Experimental)
+---
+title: Running Scion on Kubernetes (Experimental)
+---
 
 Scion supports running agents as Pods in a Kubernetes cluster. This allows for remote execution, better resource management, and scaling.
 

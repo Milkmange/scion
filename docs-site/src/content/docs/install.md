@@ -1,4 +1,6 @@
-# Installation Guide
+---
+title: Installation Guide
+---
 
 This guide covers the steps to install and configure Scion on your local machine.
 

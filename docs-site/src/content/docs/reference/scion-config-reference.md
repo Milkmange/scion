@@ -1,6 +1,9 @@
+---
+title: Configuration Reference
+---
+
 TODO this file is pretty out of date
 
-# Configuration Reference
 
 
 
