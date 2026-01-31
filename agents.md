@@ -93,7 +93,7 @@ If a rebase or merge results in conflicts:
 
 1.  Work on the given task until it is complete
 1.  Add or modify tests to ensure funciton is working as intended
-1.  Run all tests to ensure nothing was broken
+1.  Run all tests to ensure nothing was broken - but **note** it is common to get a spurious FAIL due to a memory error from an issue with the sqlite vet tool, not from our code. You just need to verify the actual tests pass.
 1.  If you are running the build to check for errors, be sure to Use `-buildvcs=false` as an arg to `go build` to disable VCS stamping with the 
 1.  Commit your work to git as you go to capture changes as appropriate
 1.  When you are finished, rebase your branch on main, favoring main, running tests again if you had to resolve conflicts
