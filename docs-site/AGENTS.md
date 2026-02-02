@@ -12,6 +12,8 @@ Scion documentation must navigate three primary dimensions:
 | **Operational Mode** | Solo (Local-only, zero-config), Hosted (Distributed, Hub-centric) |
 | **Interface** | CLI (Primary), Web Dashboard (Visualization & Control) |
 
+Note no one variant within a dimension has supremecy over another.
+
 ## 2. Proposed Content Architecture
 
 The documentation is organized into five functional pillars. The "Intersection" of dimensions is handled by grouping guides by **Persona** and then branching by **Mode**.
