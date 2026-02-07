@@ -845,7 +845,11 @@ func runHubGrovesInfo(cmd *cobra.Command, args []string) error {
 			} else {
 				statusIndicator = fmt.Sprintf("[%s]", p.Status)
 			}
-			fmt.Printf("  - %s %s\n", p.BrokerName, statusIndicator)
+			defaultIndicator := ""
+			if p.BrokerID == grove.DefaultRuntimeBrokerID {
+				defaultIndicator = " (default)"
+			}
+			fmt.Printf("  - %s %s%s\n", p.BrokerName, statusIndicator, defaultIndicator)
 			if !p.LinkedAt.IsZero() {
 				fmt.Printf("    Linked: %s\n", p.LinkedAt.Format(time.RFC3339))
 			}
