@@ -18,6 +18,7 @@
     ]
   },
   "includeCoAuthoredBy": false,
+  "gitAttribution": false,
   "hooks": {
     "SessionStart": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
     "SessionEnd": [{"matcher": "*", "hooks": [{"name": "scion-status", "type": "command", "command": "sciontool hook --dialect=claude"}]}],
