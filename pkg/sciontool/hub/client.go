@@ -271,6 +271,14 @@ func (c *Client) ReportShuttingDown(ctx context.Context, message string) error {
 	})
 }
 
+// ReportStopped reports that the agent has stopped.
+func (c *Client) ReportStopped(ctx context.Context, message string) error {
+	return c.UpdateStatus(ctx, StatusUpdate{
+		Status:  StatusStopped,
+		Message: message,
+	})
+}
+
 // ReportTaskCompleted reports that a task has been completed.
 // This sets the session status to idle and records the task summary.
 func (c *Client) ReportTaskCompleted(ctx context.Context, taskSummary string) error {

@@ -180,6 +180,13 @@ func TestClient_ConvenienceMethods(t *testing.T) {
 		assert.Equal(t, StatusShuttingDown, lastStatus.Status)
 	})
 
+	t.Run("ReportStopped", func(t *testing.T) {
+		err := client.ReportStopped(ctx, "agent stopped")
+		require.NoError(t, err)
+		assert.Equal(t, StatusStopped, lastStatus.Status)
+		assert.Equal(t, "agent stopped", lastStatus.Message)
+	})
+
 	t.Run("ReportTaskCompleted", func(t *testing.T) {
 		err := client.ReportTaskCompleted(ctx, "implemented feature")
 		require.NoError(t, err)

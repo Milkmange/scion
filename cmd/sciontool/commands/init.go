@@ -223,6 +223,10 @@ func runInit(args []string) int {
 		}{code, err}
 	}()
 
+	// Heartbeat control variables - declared here so they're accessible during shutdown
+	var heartbeatCancel context.CancelFunc
+	var heartbeatDone <-chan struct{}
+
 	// Wait a moment for process to start, then run post-start hooks
 	// Use a short timeout to detect immediate startup failures
 	select {
@@ -257,8 +261,9 @@ func runInit(args []string) int {
 			hubCancel()
 
 			// Start heartbeat loop in background
-			heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
-			heartbeatDone := hubClient.StartHeartbeat(heartbeatCtx, &hub.HeartbeatConfig{
+			var heartbeatCtx context.Context
+			heartbeatCtx, heartbeatCancel = context.WithCancel(context.Background())
+			heartbeatDone = hubClient.StartHeartbeat(heartbeatCtx, &hub.HeartbeatConfig{
 				Interval: hub.DefaultHeartbeatInterval,
 				Timeout:  hub.DefaultHeartbeatTimeout,
 				OnError: func(err error) {
@@ -269,13 +274,6 @@ func runInit(args []string) int {
 				},
 			})
 			log.Info("Started Hub heartbeat loop (interval: %s)", hub.DefaultHeartbeatInterval)
-
-			// Ensure heartbeat is stopped when we exit
-			defer func() {
-				heartbeatCancel()
-				<-heartbeatDone
-				log.Debug("Heartbeat loop stopped")
-			}()
 		} else {
 			log.Debug("Hub client not configured - skipping status report")
 		}
@@ -283,6 +281,13 @@ func runInit(args []string) int {
 
 	// Wait for child to exit
 	result := <-exitChan
+
+	// Stop heartbeat before reporting shutdown status to prevent races
+	if heartbeatCancel != nil {
+		heartbeatCancel()
+		<-heartbeatDone
+		log.Debug("Heartbeat loop stopped")
+	}
 
 	// Report shutting down to Hub if in hosted mode
 	if hubClient := hub.NewClient(); hubClient != nil && hubClient.IsConfigured() {
@@ -297,6 +302,17 @@ func runInit(args []string) int {
 	log.Info("Running session-end hooks...")
 	if err := lifecycleManager.RunSessionEnd(); err != nil {
 		log.Error("Session-end hooks failed: %v", err)
+	}
+
+	// Report final stopped status to Hub
+	if hubClient := hub.NewClient(); hubClient != nil && hubClient.IsConfigured() {
+		hubCtx, hubCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := hubClient.ReportStopped(hubCtx, "Agent stopped"); err != nil {
+			log.Error("Failed to report stopped status to Hub: %v", err)
+		} else {
+			log.Info("Reported stopped status to Hub")
+		}
+		hubCancel()
 	}
 
 	if result.err != nil {
