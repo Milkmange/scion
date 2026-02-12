@@ -78,11 +78,23 @@ func DeleteAgentFiles(agentName string, grovePath string, removeBranch bool) (bo
 }
 
 func (m *AgentManager) Provision(ctx context.Context, opts api.StartOptions) (*api.ScionConfig, error) {
-	_, _, _, cfg, err := GetAgent(ctx, opts.Name, opts.Template, opts.Image, opts.GrovePath, opts.Profile, "created", opts.Branch, opts.Workspace)
+	agentDir, _, _, cfg, err := GetAgent(ctx, opts.Name, opts.Template, opts.Image, opts.GrovePath, opts.Profile, "created", opts.Branch, opts.Workspace)
 	if err == nil {
 		_ = UpdateAgentConfig(opts.Name, opts.GrovePath, "created", m.Runtime.Name(), opts.Profile, "")
 	}
-	return cfg, err
+	if err != nil {
+		return cfg, err
+	}
+
+	// If a task was provided, write it to prompt.md for later execution
+	if opts.Task != "" {
+		promptFile := filepath.Join(agentDir, "prompt.md")
+		if writeErr := os.WriteFile(promptFile, []byte(opts.Task), 0644); writeErr != nil {
+			return cfg, fmt.Errorf("failed to write task to prompt.md: %w", writeErr)
+		}
+	}
+
+	return cfg, nil
 }
 
 func ProvisionAgent(ctx context.Context, agentName string, templateName string, agentImage string, grovePath string, profileName string, optionalStatus string, branch string, workspace string) (string, string, *api.ScionConfig, error) {

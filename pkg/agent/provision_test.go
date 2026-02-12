@@ -22,7 +22,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ptone/scion-agent/pkg/api"
 	"github.com/ptone/scion-agent/pkg/config"
+	"github.com/ptone/scion-agent/pkg/runtime"
 )
 
 
@@ -178,6 +180,72 @@ func TestProvisionGeminiAgentSettings(t *testing.T) {
 	if auth["selectedType"] != "gemini-api-key" {
 		t.Errorf("expected selectedType gemini-api-key, got %v", auth["selectedType"])
 	}
+}
+
+func TestProvisionWritesTaskToPromptMd(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	projectDir := filepath.Join(tmpDir, "project")
+	projectScionDir := filepath.Join(projectDir, ".scion")
+	if err := config.InitProject(projectScionDir, getTestHarnesses()); err != nil {
+		t.Fatalf("InitProject failed: %v", err)
+	}
+
+	os.Chdir(projectDir)
+
+	rt := &runtime.MockRuntime{}
+	mgr := NewManager(rt)
+
+	t.Run("with task", func(t *testing.T) {
+		opts := api.StartOptions{
+			Name:      "agent-with-task",
+			Task:      "implement feature X",
+			GrovePath: projectScionDir,
+		}
+
+		_, err := mgr.Provision(context.Background(), opts)
+		if err != nil {
+			t.Fatalf("Provision failed: %v", err)
+		}
+
+		promptFile := filepath.Join(projectScionDir, "agents", "agent-with-task", "prompt.md")
+		content, err := os.ReadFile(promptFile)
+		if err != nil {
+			t.Fatalf("failed to read prompt.md: %v", err)
+		}
+		if string(content) != "implement feature X" {
+			t.Errorf("expected prompt.md to contain 'implement feature X', got %q", string(content))
+		}
+	})
+
+	t.Run("without task", func(t *testing.T) {
+		opts := api.StartOptions{
+			Name:      "agent-no-task",
+			GrovePath: projectScionDir,
+		}
+
+		_, err := mgr.Provision(context.Background(), opts)
+		if err != nil {
+			t.Fatalf("Provision failed: %v", err)
+		}
+
+		promptFile := filepath.Join(projectScionDir, "agents", "agent-no-task", "prompt.md")
+		content, err := os.ReadFile(promptFile)
+		if err != nil {
+			t.Fatalf("failed to read prompt.md: %v", err)
+		}
+		if string(content) != "" {
+			t.Errorf("expected empty prompt.md, got %q", string(content))
+		}
+	})
 }
 
 func TestProvisionAgentNonGitWorkspace(t *testing.T) {

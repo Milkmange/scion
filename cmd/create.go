@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ptone/scion-agent/pkg/agent"
@@ -29,13 +30,18 @@ import (
 
 // createCmd represents the create command
 var createCmd = &cobra.Command{
-	Use:   "create <agent-name>",
+	Use:   "create <agent-name> [task...]",
 	Short: "Provision a new scion agent without starting it",
 	Long: `Provision a new isolated LLM agent directory to perform a specific task.
-The agent will be created from a template.`,
-	Args: cobra.ExactArgs(1),
+The agent will be created from a template.
+
+The agent-name is required as the first argument. All subsequent arguments
+form the task prompt, which will be written to prompt.md. If no task
+arguments are provided, an empty prompt.md is created for later editing.`,
+	Args: cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		agentName := args[0]
+		task := strings.TrimSpace(strings.Join(args[1:], " "))
 
 		// Check if Hub should be used, excluding the target agent from sync requirements.
 		// This allows creating an agent even if it already exists on Hub (recreate scenario)
@@ -46,7 +52,7 @@ The agent will be created from a template.`,
 		}
 
 		if hubCtx != nil {
-			return createAgentViaHub(hubCtx, agentName)
+			return createAgentViaHub(hubCtx, agentName, task)
 		}
 
 		// Local mode
@@ -60,6 +66,7 @@ The agent will be created from a template.`,
 
 		opts := api.StartOptions{
 			Name:      agentName,
+			Task:      task,
 			Template:  templateName,
 			Profile:   effectiveProfile,
 			Image:     agentImage,
@@ -90,7 +97,7 @@ The agent will be created from a template.`,
 	},
 }
 
-func createAgentViaHub(hubCtx *HubContext, agentName string) error {
+func createAgentViaHub(hubCtx *HubContext, agentName string, task string) error {
 	PrintUsingHub(hubCtx.Endpoint)
 
 	// Get the grove ID for this project
@@ -118,13 +125,15 @@ func createAgentViaHub(hubCtx *HubContext, agentName string) error {
 		}
 	}
 
-	// Build create request
+	// Build create request — always provision-only (create does not start the agent)
 	req := &hubclient.CreateAgentRequest{
-		Name:          agentName,
-		GroveID:       groveID,
-		Template:      resolvedTemplate,
+		Name:            agentName,
+		GroveID:         groveID,
+		Template:        resolvedTemplate,
 		RuntimeBrokerID: runtimeBrokerID,
-		Branch:        branch,
+		Task:            task,
+		Branch:          branch,
+		ProvisionOnly:   true,
 	}
 
 	if agentImage != "" {

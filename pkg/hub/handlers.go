@@ -156,6 +156,7 @@ type CreateAgentRequest struct {
 	Labels        map[string]string `json:"labels,omitempty"`
 	Config        *AgentConfigOverride `json:"config,omitempty"`
 	Attach        bool              `json:"attach,omitempty"` // If true, dispatch the agent even without a task (for interactive attach mode)
+	ProvisionOnly bool              `json:"provisionOnly,omitempty"` // If true, provision only (write task to prompt.md) without starting
 	// WorkspaceFiles is populated for non-git workspace bootstrap.
 	// When present, the Hub generates signed upload URLs instead of dispatching immediately.
 	WorkspaceFiles []transfer.FileInfo `json:"workspaceFiles,omitempty"`
@@ -448,12 +449,12 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Dispatch to runtime broker if available.
-	// With a task or attach: full create+start (DispatchAgentCreate).
-	// Without task/attach: provision-only (DispatchAgentProvision) — sets up dirs, worktree,
-	// templates without launching the container.
+	// With a task or attach (and not provision-only): full create+start (DispatchAgentCreate).
+	// Otherwise: provision-only (DispatchAgentProvision) — sets up dirs, worktree,
+	// templates without launching the container. Task is written to prompt.md if provided.
 	var warnings []string
 	if dispatcher := s.GetDispatcher(); dispatcher != nil {
-		if req.Task != "" || req.Attach {
+		if (req.Task != "" || req.Attach) && !req.ProvisionOnly {
 			if err := dispatcher.DispatchAgentCreate(ctx, agent); err != nil {
 				// Log the error but don't fail the request - agent is created in Hub
 				warnings = append(warnings, "Failed to dispatch to runtime broker: "+err.Error())

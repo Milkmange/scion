@@ -586,6 +586,53 @@ func TestCreateAgentFullStart(t *testing.T) {
 	}
 }
 
+func TestCreateAgentProvisionOnlyWithTask(t *testing.T) {
+	srv, mgr := newTestServerWithProvisionCapture()
+
+	body := `{
+		"name": "agent-with-task",
+		"id": "agent-uuid-789",
+		"slug": "agent-with-task",
+		"provisionOnly": true,
+		"config": {"template": "claude", "task": "implement feature X"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("expected status %d, got %d: %s", http.StatusCreated, w.Code, w.Body.String())
+	}
+
+	// Verify Provision was called, not Start
+	if !mgr.provisionCalled {
+		t.Error("expected Provision to be called")
+	}
+	if mgr.startCalled {
+		t.Error("expected Start NOT to be called for provision-only with task")
+	}
+
+	// Verify the task was passed through to the Provision options
+	if mgr.lastOpts.Task != "implement feature X" {
+		t.Errorf("expected task 'implement feature X', got '%s'", mgr.lastOpts.Task)
+	}
+
+	var resp CreateAgentResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Agent == nil {
+		t.Fatal("expected agent to be present")
+	}
+
+	if resp.Agent.Status != AgentStatusCreated {
+		t.Errorf("expected status '%s', got '%s'", AgentStatusCreated, resp.Agent.Status)
+	}
+}
+
 func TestStartAgentEndpoint(t *testing.T) {
 	srv := newTestServer()
 
