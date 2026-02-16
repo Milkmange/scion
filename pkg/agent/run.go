@@ -126,11 +126,24 @@ func (m *AgentManager) Start(ctx context.Context, opts api.StartOptions) (*api.A
 	useTmux := false
 	profileName := opts.Profile
 
+	// Load on-disk harness-config for the container user (base layer).
+	// The settings map may not define harness_configs, but the on-disk
+	// config.yaml (seeded from harness embeds) always has the user field.
+	if harnessConfigName != "" {
+		if hcDir, err := config.FindHarnessConfigDir(harnessConfigName, projectDir); err == nil {
+			if hcDir.Config.User != "" {
+				unixUsername = hcDir.Config.User
+			}
+		}
+	}
+
 	if settings != nil && harnessConfigName != "" {
 		hConfig, err := settings.ResolveHarnessConfig(opts.Profile, harnessConfigName)
 		if err == nil {
 			resolvedImage = hConfig.Image
-			unixUsername = hConfig.User
+			if hConfig.User != "" {
+				unixUsername = hConfig.User
+			}
 		}
 	}
 
