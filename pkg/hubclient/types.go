@@ -23,6 +23,7 @@ type Agent struct {
 	ContainerID     string            `json:"containerId"`     // Runtime container ID (ephemeral)
 	Name            string            `json:"name"`
 	Template        string            `json:"template,omitempty"`
+	HarnessConfig   string            `json:"harnessConfig,omitempty"`
 	GroveID         string            `json:"groveId,omitempty"`
 	Grove           string            `json:"grove,omitempty"`
 	Labels          map[string]string `json:"labels,omitempty"`

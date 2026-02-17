@@ -80,7 +80,18 @@ func (m *AgentManager) List(ctx context.Context, filter map[string]string) ([]ap
 						agents[i].Runtime = info.Runtime
 					}
 					agents[i].Profile = info.Profile
+					if agents[i].Template == "" {
+						agents[i].Template = info.Template
+					}
+					if agents[i].HarnessConfig == "" {
+						agents[i].HarnessConfig = info.HarnessConfig
+					}
 				}
+			}
+
+			// Use agent-info.json mtime as LastSeen for local agents
+			if fi, err := os.Stat(agentInfoJSON); err == nil {
+				agents[i].LastSeen = fi.ModTime()
 			}
 
 			// Then load scion-agent.json for legacy support or missing fields
@@ -98,6 +109,12 @@ func (m *AgentManager) List(ctx context.Context, filter map[string]string) ([]ap
 					}
 					if agents[i].Profile == "" {
 						agents[i].Profile = cfg.Info.Profile
+					}
+					if agents[i].Template == "" {
+						agents[i].Template = cfg.Info.Template
+					}
+					if agents[i].HarnessConfig == "" {
+						agents[i].HarnessConfig = cfg.Info.HarnessConfig
 					}
 				}
 			}
@@ -160,9 +177,10 @@ func (m *AgentManager) List(ctx context.Context, filter map[string]string) ([]ap
 				}
 			}
 
-			agents = append(agents, api.AgentInfo{
+			agentEntry := api.AgentInfo{
 				Name:            e.Name(),
 				Template:        info.Template,
+				HarnessConfig:   info.HarnessConfig,
 				Grove:           groveName,
 				GrovePath:       gp,
 				ContainerStatus: "created",
@@ -171,7 +189,14 @@ func (m *AgentManager) List(ctx context.Context, filter map[string]string) ([]ap
 				SessionStatus:   info.SessionStatus,
 				Runtime:         info.Runtime,
 				Profile:         info.Profile,
-			})
+			}
+
+			// Use agent-info.json mtime as LastSeen for local agents
+			if fi, err := os.Stat(agentInfoJSON); err == nil {
+				agentEntry.LastSeen = fi.ModTime()
+			}
+
+			agents = append(agents, agentEntry)
 		}
 	}
 

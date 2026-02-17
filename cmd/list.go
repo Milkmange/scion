@@ -188,6 +188,7 @@ func hubAgentToAgentInfo(a hubclient.Agent) api.AgentInfo {
 		ContainerID:       a.ContainerID,
 		Name:              a.Name,
 		Template:          a.Template,
+		HarnessConfig:     a.HarnessConfig,
 		Grove:             a.Grove,
 		GroveID:           a.GroveID,
 		Labels:            a.Labels,
@@ -227,7 +228,7 @@ func hubAgentToAgentInfo(a hubclient.Agent) api.AgentInfo {
 }
 
 // displayAgents displays agents in the requested format
-// hubMode indicates if the listing is from Hub (shows LAST SEEN column)
+// hubMode indicates if the listing is from Hub (shows BROKER column)
 func displayAgents(agents []api.AgentInfo, all bool, hubMode bool) error {
 	if outputFormat == "json" {
 		if agents == nil {
@@ -249,9 +250,9 @@ func displayAgents(agents []api.AgentInfo, all bool, hubMode bool) error {
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if hubMode {
-		fmt.Fprintln(w, "NAME\tTEMPLATE\tRUNTIME\tGROVE\tBROKER\tAGENT STATUS\tSESSION\tCONTAINER\tLAST SEEN")
+		fmt.Fprintln(w, "NAME\tTEMPLATE\tHARNESS\tRUNTIME\tGROVE\tBROKER\tAGENT STATUS\tSESSION\tCONTAINER\tLAST EVENT")
 	} else {
-		fmt.Fprintln(w, "NAME\tTEMPLATE\tRUNTIME\tGROVE\tAGENT STATUS\tSESSION\tCONTAINER")
+		fmt.Fprintln(w, "NAME\tTEMPLATE\tHARNESS\tRUNTIME\tGROVE\tAGENT STATUS\tSESSION\tCONTAINER\tLAST EVENT")
 	}
 	for _, a := range agents {
 		agentStatus := a.Status
@@ -266,23 +267,27 @@ func displayAgents(agents []api.AgentInfo, all bool, hubMode bool) error {
 		if containerStatus == "created" && a.ID == "" {
 			containerStatus = "none"
 		}
+		harnessConfig := a.HarnessConfig
+		if harnessConfig == "" {
+			harnessConfig = "-"
+		}
+		lastEvent := formatLastSeen(a.LastSeen)
 		// Use broker name if available, otherwise fall back to ID
 		broker := a.RuntimeBrokerName
 		if broker == "" {
 			broker = a.RuntimeBrokerID
 		}
 		if hubMode {
-			lastSeen := formatLastSeen(a.LastSeen)
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.Name, a.Template, a.Runtime, a.Grove, broker, agentStatus, sessionStatus, containerStatus, lastSeen)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.Name, a.Template, harnessConfig, a.Runtime, a.Grove, broker, agentStatus, sessionStatus, containerStatus, lastEvent)
 		} else {
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.Name, a.Template, a.Runtime, a.Grove, agentStatus, sessionStatus, containerStatus)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", a.Name, a.Template, harnessConfig, a.Runtime, a.Grove, agentStatus, sessionStatus, containerStatus, lastEvent)
 		}
 	}
 	w.Flush()
 	return nil
 }
 
-// formatLastSeen formats a timestamp as a human-readable relative time
+// formatLastSeen formats a timestamp as a human-readable relative time.
 func formatLastSeen(t time.Time) string {
 	if t.IsZero() {
 		return "-"
@@ -290,7 +295,7 @@ func formatLastSeen(t time.Time) string {
 
 	d := time.Since(t)
 	if d < 0 {
-		return "now"
+		return "just now"
 	}
 
 	switch {
@@ -299,25 +304,25 @@ func formatLastSeen(t time.Time) string {
 		if secs <= 1 {
 			return "just now"
 		}
-		return fmt.Sprintf("%ds ago", secs)
+		return fmt.Sprintf("%d seconds ago", secs)
 	case d < time.Hour:
 		mins := int(d.Minutes())
 		if mins == 1 {
-			return "1m ago"
+			return "1 minute ago"
 		}
-		return fmt.Sprintf("%dm ago", mins)
+		return fmt.Sprintf("%d minutes ago", mins)
 	case d < 24*time.Hour:
 		hours := int(d.Hours())
 		if hours == 1 {
-			return "1h ago"
+			return "1 hour ago"
 		}
-		return fmt.Sprintf("%dh ago", hours)
+		return fmt.Sprintf("%d hours ago", hours)
 	default:
 		days := int(d.Hours() / 24)
 		if days == 1 {
-			return "1d ago"
+			return "1 day ago"
 		}
-		return fmt.Sprintf("%dd ago", days)
+		return fmt.Sprintf("%d days ago", days)
 	}
 }
 
