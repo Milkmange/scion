@@ -729,19 +729,63 @@ NATS (or any cross-process pub/sub) is only required if:
 
 None of these apply to Scion at its current stage.
 
-#### Lighter Alternatives to NATS for Multi-Node (If Ever Needed)
+#### Alternatives to NATS
 
-If cross-process event delivery is needed in the future, NATS is one option but not the only one. Alternatives ranked by complexity:
+If cross-process event delivery is needed in the future, or a more structured in-process pub/sub is desired, there are several options. Ranked by complexity:
 
-| Approach | Complexity | New Dependencies | Notes |
-|----------|-----------|-----------------|-------|
-| **Hub serves SSE directly** | None | None | Browser connects to Hub. No intermediary. Works if Hub is the public-facing server. |
-| **PostgreSQL `LISTEN/NOTIFY`** | Low | Postgres (if migrated from SQLite) | Built-in pub/sub in the database. Payload limit 8 KB. |
-| **Redis Pub/Sub** | Low | Redis | If Redis is already in the stack for sessions or caching. |
-| **Embedded NATS** | Medium | ~15 MB binary size | In-process NATS server. No external process. |
-| **External NATS** | Medium | NATS server process | Full flexibility. Overkill for single-Hub. |
+| Approach | Binary Delta | New Deps | In-Process | Cross-Process | Topic Filtering |
+|----------|-------------|----------|-----------|--------------|----------------|
+| **Go channels** | 0 | 0 | Yes | No | Custom (~40 lines) |
+| **mangos/v3** (nanomsg) | ~2 MB | 2 | Yes (`inproc://`) | Yes (`tcp://`, `ipc://`) | Prefix match (built-in) |
+| **Hub serves SSE directly** | 0 | 0 | Yes | N/A | Custom |
+| **PostgreSQL `LISTEN/NOTIFY`** | 0 | Postgres | No | Yes | Channel name only |
+| **Redis Pub/Sub** | varies | Redis | No | Yes | Pattern match |
+| **nats.go client** | ~5 MB | 3 | No | Yes (needs server) | Wildcards (`*`, `>`) |
+| **Embedded NATS server** | ~15 MB | 11 | Yes | Yes | Wildcards (`*`, `>`) |
 
-For Scion, the "Hub serves SSE directly" row is the key insight: since the Hub is the single source of truth and serves the SSE endpoint, there is no need for a pub/sub intermediary at all. The `ChannelEventPublisher` (in-process Go channels) is sufficient.
+##### mangos/v3 (nanomsg Scalability Protocols)
+
+[mangos/v3](https://github.com/nanomsg/mangos) is a pure-Go implementation of the Scalability Protocols (nanomsg/nng). It provides idiomatic Go pub/sub sockets with multiple transport options.
+
+**How it would work:**
+
+```go
+import (
+    "go.nanomsg.org/mangos/v3/protocol/pub"
+    "go.nanomsg.org/mangos/v3/protocol/sub"
+    _ "go.nanomsg.org/mangos/v3/transport/inproc"
+)
+
+// Publisher (in Hub)
+pubSock, _ := pub.NewSocket()
+pubSock.Listen("inproc://events")        // In-process: zero-copy
+// pubSock.Listen("ipc:///tmp/scion.sock") // Cross-process: same code
+// pubSock.Listen("tcp://0.0.0.0:5555")    // Network: same code
+
+// Subscriber (in SSE handler)
+subSock, _ := sub.NewSocket()
+subSock.Dial("inproc://events")
+subSock.SetOption(mangos.OptionSubscribe, []byte("grove.abc."))  // Prefix filter
+```
+
+**Advantages over Go channels:**
+- Built-in prefix-based topic filtering (no custom matching code).
+- Transparent transport upgrade: switch from `inproc://` to `ipc://` or `tcp://` by changing the URL string alone. No code changes, no separate server process. This enables cross-process pub/sub (e.g., a separate web frontend process on the same machine) without introducing NATS.
+- Built-in flow control and backpressure handling.
+- Small footprint: 2 new modules, ~2 MB binary delta.
+
+**Limitations:**
+- Topic filtering is **byte-prefix matching only**. Subscribing to `grove.abc.` matches all events under that grove, which covers the primary use case (`grove.{id}.>`). However, single-token wildcards like `grove.*.summary` (dashboard view) require subscriber-side filtering — mangos doesn't support NATS-style `*` or `>` wildcards.
+- No clustering or federation. For true multi-node with multiple Hub instances, you'd still need NATS or similar.
+- Adds a dependency for a problem that Go channels solve in ~50 lines for the single-process case.
+
+**When mangos makes sense:** If there's a concrete need for cross-process pub/sub without an external server — for example, running the web frontend as a separate process on the same host connected via `ipc://` unix domain socket. It provides a middle ground between "everything in one process" and "deploy a full NATS server."
+
+##### Go channels vs. mangos: assessment
+
+For Scion's current architecture (single Hub process, SSE endpoint co-located), Go channels are sufficient. The `EventPublisher` interface already provides the abstraction boundary for swapping implementations later. mangos would be a reasonable choice if the project outgrows in-process channels but doesn't warrant a full NATS deployment — the `inproc://` → `ipc://` transport upgrade path is genuinely useful for incremental scaling.
+
+For Scion, the "Hub serves SSE directly" row is the key insight: since the Hub is the single source of truth and serves the SSE endpoint, there is no need for a pub/sub intermediary at all. The `ChannelEventPublisher` (in-process Go channels) is sufficient for the current stage.
 
 #### Recommendation
 
