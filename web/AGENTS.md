@@ -25,9 +25,12 @@ npm install    # First time only, or after package.json changes
 # Build client assets
 npm run build
 
-# Run the Go server (from repository root)
-scion server start --enable-web --enable-hub --web-port 8080
+# Run the Go server with dev auth (from repository root)
+scion server start --enable-hub --enable-web --dev-auth \
+  --web-assets-dir ./web/dist/client
 ```
+
+Dev auth bypasses OAuth and auto-creates a session with admin privileges. The `--web-assets-dir` flag loads assets from disk so you can rebuild and refresh without restarting the server.
 
 ### Using Vite Dev Server
 
@@ -64,39 +67,50 @@ After making changes, verify:
 ```
 web/
 ├── src/
-│   ├── client/           # Browser-side code
-│   │   ├── main.ts       # Client entry point (hydration)
-│   │   ├── state.ts      # State manager with SSE subscriptions
-│   │   └── sse-client.ts # SSE client for real-time updates
-│   ├── components/       # Lit web components
-│   │   ├── index.ts      # Component exports
-│   │   ├── app-shell.ts  # Main application shell
-│   │   ├── shared/       # Reusable UI components
-│   │   │   ├── index.ts      # Shared component exports
-│   │   │   ├── nav.ts        # Sidebar navigation
-│   │   │   ├── header.ts     # Top header bar
-│   │   │   ├── breadcrumb.ts # Breadcrumb navigation
+│   ├── client/              # Browser-side code
+│   │   ├── main.ts          # Client entry point, routing setup
+│   │   ├── state.ts         # State manager with SSE subscriptions
+│   │   └── sse-client.ts    # SSE client for real-time updates
+│   ├── components/          # Lit web components
+│   │   ├── index.ts         # Component exports
+│   │   ├── app-shell.ts     # Main application shell (sidebar, header, content)
+│   │   ├── shared/          # Reusable UI components
+│   │   │   ├── index.ts         # Shared component exports
+│   │   │   ├── nav.ts           # Sidebar navigation
+│   │   │   ├── header.ts       # Top header bar with user menu
+│   │   │   ├── breadcrumb.ts   # Breadcrumb navigation
+│   │   │   ├── debug-panel.ts  # Debug panel component
 │   │   │   └── status-badge.ts # Status indicator badges
-│   │   └── pages/        # Page components
-│   │       ├── home.ts   # Dashboard page
-│   │       └── not-found.ts # 404 page
-│   ├── styles/           # CSS theme and utilities
-│   │   ├── theme.css     # CSS custom properties, light/dark mode
-│   │   └── utilities.css # Utility classes
-│   └── shared/           # Shared types between components
-│       └── types.ts      # Type definitions
-├── public/               # Static assets
-│   └── assets/           # CSS, JS, images
-├── dist/                 # Build output (gitignored)
+│   │   └── pages/           # Page components
+│   │       ├── home.ts          # Dashboard page
+│   │       ├── login.ts         # OAuth login page
+│   │       ├── agents.ts       # Agents list page
+│   │       ├── agent-detail.ts # Agent details page
+│   │       ├── groves.ts       # Groves list page
+│   │       ├── grove-detail.ts # Grove details page
+│   │       ├── terminal.ts     # Terminal/session page (xterm.js)
+│   │       ├── unauthorized.ts # 401/403 page
+│   │       └── not-found.ts    # 404 page
+│   ├── styles/              # CSS theme and utilities
+│   │   ├── theme.css        # CSS custom properties, light/dark mode
+│   │   └── utilities.css    # Utility classes
+│   └── shared/              # Shared types between components
+│       └── types.ts         # Type definitions (User, Grove, Agent, etc.)
+├── public/                  # Static assets
+│   └── assets/              # Built client assets (CSS, JS)
+├── dist/                    # Build output (gitignored)
+├── vite.config.ts           # Vite build configuration
+├── tsconfig.json            # TypeScript configuration
 └── package.json
 ```
 
 ## Technology Stack
 
-- **Components:** Lit 3.x with decorators
-- **UI Library:** Shoelace
+- **Components:** Lit 3.x with TypeScript decorators
+- **UI Library:** Shoelace 2.x
 - **Build:** Vite for client-side bundling
-- **Routing:** @vaadin/router (client-side)
+- **Routing:** Client-side via History API (click interception in `main.ts`)
+- **Terminal:** xterm.js for terminal sessions
 - **Server:** Go (`scion` binary with `--enable-web`)
 
 ## Key Patterns
@@ -155,3 +169,12 @@ Use CSS custom properties with the `--scion-` prefix for consistent theming:
 ### Dark Mode
 
 Dark mode is handled automatically via CSS custom properties. The theme toggle in the navigation saves the preference to localStorage. Components should use the semantic color variables (e.g., `--scion-surface`, `--scion-text`) which automatically adjust for dark mode.
+
+## Containerized / Sandboxed Environments
+
+When working in a containerized or sandboxed agent environment (e.g., scion agents), keep these points in mind:
+
+
+- **Vite dev server is available.** You can run `npm run dev` to start the Vite dev server for client-side development and visual inspection. API calls and SSE will not work without the Go backend.
+- **Use `--dev-auth` for local testing.** When a Go server is available, `--dev-auth` bypasses OAuth and auto-creates a dev session, which is the simplest way to test the frontend end-to-end. See the README for details.
+- **go server** the golang server can be started as a background process, but oauth flows can not be used in a container
