@@ -35,6 +35,7 @@ RUN go mod download
 # Copy source and build scion and sciontool
 COPY cmd/ ./cmd/
 COPY pkg/ ./pkg/
+COPY web/*.go ./web/
 
 # Build with version info injected via ldflags
 # VCS stamping is disabled since .git is not in the build context;
@@ -48,8 +49,8 @@ RUN BUILD_TIME="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}" && \
         SCION_LDFLAGS="${SCION_LDFLAGS} -X ${SCION_PKG}.Commit=${GIT_COMMIT}"; \
         SCIONTOOL_LDFLAGS="${SCIONTOOL_LDFLAGS} -X ${SCIONTOOL_PKG}.Commit=${GIT_COMMIT}"; \
     fi && \
-    go build -buildvcs=false -ldflags="${SCION_LDFLAGS}" -o /usr/local/bin/scion ./cmd/scion/ && \
-    go build -buildvcs=false -ldflags="${SCIONTOOL_LDFLAGS}" -o /usr/local/bin/sciontool ./cmd/sciontool/
+    go build -buildvcs=false -tags no_embed_web -ldflags="${SCION_LDFLAGS}" -o /usr/local/bin/scion ./cmd/scion/ && \
+    go build -buildvcs=false -tags no_embed_web -ldflags="${SCIONTOOL_LDFLAGS}" -o /usr/local/bin/sciontool ./cmd/sciontool/
 
 # Final stage
 FROM base
