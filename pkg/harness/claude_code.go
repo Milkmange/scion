@@ -28,7 +28,9 @@ import (
 	"github.com/ptone/scion-agent/pkg/util"
 )
 
-type ClaudeCode struct{}
+type ClaudeCode struct {
+	systemPrompt string
+}
 
 func (c *ClaudeCode) Name() string {
 	return "claude"
@@ -46,6 +48,12 @@ func (c *ClaudeCode) GetEnv(agentName string, agentHome string, unixUsername str
 	if auth.AnthropicAPIKey != "" {
 		env["ANTHROPIC_API_KEY"] = auth.AnthropicAPIKey
 	}
+
+	// Load system prompt content for use in GetCommand.
+	if content := c.loadSystemPrompt(agentHome); content != "" {
+		c.systemPrompt = content
+	}
+
 	return env
 }
 
@@ -53,6 +61,9 @@ func (c *ClaudeCode) GetCommand(task string, resume bool, baseArgs []string) []s
 	args := []string{"claude", "--no-chrome", "--dangerously-skip-permissions"}
 	if resume {
 		args = append(args, "--continue")
+	}
+	if c.systemPrompt != "" {
+		args = append(args, "--system-prompt", c.systemPrompt)
 	}
 	args = append(args, baseArgs...)
 	if task != "" {
@@ -74,7 +85,7 @@ func (c *ClaudeCode) DefaultConfigDir() string {
 }
 
 func (c *ClaudeCode) HasSystemPrompt(agentHome string) bool {
-	return false
+	return c.loadSystemPrompt(agentHome) != ""
 }
 
 func (c *ClaudeCode) Provision(ctx context.Context, agentName, agentHome, agentWorkspace string) error {
@@ -178,6 +189,28 @@ func (c *ClaudeCode) RequiredEnvKeys(authSelectedType string) []string {
 }
 
 func (c *ClaudeCode) InjectSystemPrompt(agentHome string, content []byte) error {
-	// System prompt is not yet supported for the Claude harness.
-	return nil
+	target := filepath.Join(agentHome, ".claude", "system-prompt.md")
+	if err := os.MkdirAll(filepath.Dir(target), 0755); err != nil {
+		return fmt.Errorf("failed to create directory for system prompt: %w", err)
+	}
+	return os.WriteFile(target, content, 0644)
+}
+
+// loadSystemPrompt reads the system prompt file from agentHome and returns
+// its content if valid (non-empty and non-placeholder). Returns empty string
+// if the file doesn't exist or contains only placeholder text.
+func (c *ClaudeCode) loadSystemPrompt(agentHome string) string {
+	if agentHome == "" {
+		return ""
+	}
+	path := filepath.Join(agentHome, ".claude", "system-prompt.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return ""
+	}
+	content := strings.TrimSpace(string(data))
+	if content == "" || content == "# Placeholder" {
+		return ""
+	}
+	return content
 }

@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+
+	"github.com/ptone/scion-agent/pkg/api"
 )
 
 func TestClaudeCode_GetCommand(t *testing.T) {
@@ -187,13 +189,142 @@ func TestClaudeInjectSystemPrompt(t *testing.T) {
 		t.Fatalf("InjectSystemPrompt failed: %v", err)
 	}
 
-	// System prompt is unsupported for Claude; no file should be written.
-	target := filepath.Join(agentHome, ".claude", "CLAUDE.md")
-	if _, err := os.Stat(target); !os.IsNotExist(err) {
-		t.Errorf("expected no file at %s, but it exists", target)
+	target := filepath.Join(agentHome, ".claude", "system-prompt.md")
+	data, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("expected file at %s: %v", target, err)
 	}
-	target = filepath.Join(agentHome, ".claude", "claude.md")
-	if _, err := os.Stat(target); !os.IsNotExist(err) {
-		t.Errorf("expected no file at %s, but it exists", target)
+	if string(data) != string(content) {
+		t.Errorf("content mismatch: got %q, want %q", string(data), string(content))
+	}
+}
+
+func TestClaudeHasSystemPrompt(t *testing.T) {
+	t.Run("no file", func(t *testing.T) {
+		agentHome := t.TempDir()
+		c := &ClaudeCode{}
+		if c.HasSystemPrompt(agentHome) {
+			t.Error("expected HasSystemPrompt=false when no file exists")
+		}
+	})
+
+	t.Run("placeholder content", func(t *testing.T) {
+		agentHome := t.TempDir()
+		c := &ClaudeCode{}
+		c.InjectSystemPrompt(agentHome, []byte("# Placeholder"))
+		if c.HasSystemPrompt(agentHome) {
+			t.Error("expected HasSystemPrompt=false for placeholder content")
+		}
+	})
+
+	t.Run("empty content", func(t *testing.T) {
+		agentHome := t.TempDir()
+		c := &ClaudeCode{}
+		c.InjectSystemPrompt(agentHome, []byte(""))
+		if c.HasSystemPrompt(agentHome) {
+			t.Error("expected HasSystemPrompt=false for empty content")
+		}
+	})
+
+	t.Run("whitespace only", func(t *testing.T) {
+		agentHome := t.TempDir()
+		c := &ClaudeCode{}
+		c.InjectSystemPrompt(agentHome, []byte("  \n\n  "))
+		if c.HasSystemPrompt(agentHome) {
+			t.Error("expected HasSystemPrompt=false for whitespace-only content")
+		}
+	})
+
+	t.Run("valid content", func(t *testing.T) {
+		agentHome := t.TempDir()
+		c := &ClaudeCode{}
+		c.InjectSystemPrompt(agentHome, []byte("You are a coding assistant."))
+		if !c.HasSystemPrompt(agentHome) {
+			t.Error("expected HasSystemPrompt=true for valid content")
+		}
+	})
+
+	t.Run("empty agentHome", func(t *testing.T) {
+		c := &ClaudeCode{}
+		if c.HasSystemPrompt("") {
+			t.Error("expected HasSystemPrompt=false for empty agentHome")
+		}
+	})
+}
+
+func TestClaudeGetCommand_WithSystemPrompt(t *testing.T) {
+	agentHome := t.TempDir()
+	c := &ClaudeCode{}
+
+	// Inject a real system prompt
+	c.InjectSystemPrompt(agentHome, []byte("You are a coding assistant."))
+
+	// Load system prompt via GetEnv (simulates runtime flow)
+	c.GetEnv("test-agent", agentHome, "scion", api.AuthConfig{})
+
+	// GetCommand should now include --system-prompt
+	cmd := c.GetCommand("do something", false, nil)
+	expected := []string{
+		"claude", "--no-chrome", "--dangerously-skip-permissions",
+		"--system-prompt", "You are a coding assistant.",
+		"do something",
+	}
+	if !reflect.DeepEqual(cmd, expected) {
+		t.Errorf("expected %v, got %v", expected, cmd)
+	}
+}
+
+func TestClaudeGetCommand_WithoutSystemPrompt(t *testing.T) {
+	agentHome := t.TempDir()
+	c := &ClaudeCode{}
+
+	// Inject only placeholder content
+	c.InjectSystemPrompt(agentHome, []byte("# Placeholder"))
+
+	// Load via GetEnv — should not pick up placeholder
+	c.GetEnv("test-agent", agentHome, "scion", api.AuthConfig{})
+
+	cmd := c.GetCommand("do something", false, nil)
+	expected := []string{"claude", "--no-chrome", "--dangerously-skip-permissions", "do something"}
+	if !reflect.DeepEqual(cmd, expected) {
+		t.Errorf("expected %v, got %v", expected, cmd)
+	}
+}
+
+func TestClaudeGetCommand_SystemPromptWithBaseArgs(t *testing.T) {
+	agentHome := t.TempDir()
+	c := &ClaudeCode{}
+
+	c.InjectSystemPrompt(agentHome, []byte("Be helpful."))
+	c.GetEnv("test-agent", agentHome, "scion", api.AuthConfig{})
+
+	cmd := c.GetCommand("task", false, []string{"--model", "opus"})
+	expected := []string{
+		"claude", "--no-chrome", "--dangerously-skip-permissions",
+		"--system-prompt", "Be helpful.",
+		"--model", "opus",
+		"task",
+	}
+	if !reflect.DeepEqual(cmd, expected) {
+		t.Errorf("expected %v, got %v", expected, cmd)
+	}
+}
+
+func TestClaudeGetCommand_SystemPromptWithResume(t *testing.T) {
+	agentHome := t.TempDir()
+	c := &ClaudeCode{}
+
+	c.InjectSystemPrompt(agentHome, []byte("Be concise."))
+	c.GetEnv("test-agent", agentHome, "scion", api.AuthConfig{})
+
+	cmd := c.GetCommand("task", true, nil)
+	expected := []string{
+		"claude", "--no-chrome", "--dangerously-skip-permissions",
+		"--continue",
+		"--system-prompt", "Be concise.",
+		"task",
+	}
+	if !reflect.DeepEqual(cmd, expected) {
+		t.Errorf("expected %v, got %v", expected, cmd)
 	}
 }
