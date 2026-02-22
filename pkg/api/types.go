@@ -379,7 +379,8 @@ type RequiredSecret struct {
 // a human-readable description and the source that declared it.
 type SecretKeyInfo struct {
 	Description string `json:"description,omitempty"`
-	Source      string `json:"source"` // "harness", "template", "settings"
+	Source      string `json:"source"`                // "harness", "template", "settings"
+	Type        string `json:"type,omitempty"`         // "environment" (default), "variable", "file"
 }
 
 // ResolvedSecret represents a secret that has been resolved from the Hub

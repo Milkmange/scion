@@ -1071,6 +1071,7 @@ func (s *Server) extractRequiredEnvKeys(req CreateAgentRequest) ([]string, map[s
 				secretInfo[sec.Key] = api.SecretKeyInfo{
 					Description: sec.Description,
 					Source:      "settings",
+					Type:        sec.Type,
 				}
 			}
 		}
@@ -1083,6 +1084,7 @@ func (s *Server) extractRequiredEnvKeys(req CreateAgentRequest) ([]string, map[s
 					secretInfo[sec.Key] = api.SecretKeyInfo{
 						Description: sec.Description,
 						Source:      "settings",
+						Type:        sec.Type,
 					}
 				}
 			}
@@ -1095,6 +1097,7 @@ func (s *Server) extractRequiredEnvKeys(req CreateAgentRequest) ([]string, map[s
 		secretInfo[sec.Key] = api.SecretKeyInfo{
 			Description: sec.Description,
 			Source:      "template",
+			Type:        sec.Type,
 		}
 	}
 	// Also try loading local template config
@@ -1107,6 +1110,7 @@ func (s *Server) extractRequiredEnvKeys(req CreateAgentRequest) ([]string, map[s
 						secretInfo[sec.Key] = api.SecretKeyInfo{
 							Description: sec.Description,
 							Source:      "template",
+							Type:        sec.Type,
 						}
 					}
 				}

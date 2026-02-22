@@ -841,6 +841,157 @@ profiles:
 	}
 }
 
+// TestEnvGather_SecretInfoIncludesType tests that the Type field from
+// RequiredSecret declarations is propagated into SecretKeyInfo.
+func TestEnvGather_SecretInfoIncludesType(t *testing.T) {
+	settings := `
+schema_version: "1"
+harness_configs:
+  claude:
+    harness: claude
+    secrets:
+      - key: ENV_SECRET
+        description: "An environment secret"
+        type: environment
+      - key: FILE_CERT
+        description: "TLS certificate"
+        type: file
+profiles:
+  default:
+    runtime: docker
+    secrets:
+      - key: PROFILE_TOKEN
+        description: "Profile token"
+        type: variable
+`
+	srv, _, groveDir := newTestServerWithGrovePath(t, settings)
+
+	// Satisfy harness key via broker env
+	t.Setenv("ANTHROPIC_API_KEY", "broker-ant-key")
+
+	body := `{
+		"name": "test-agent-type-prop",
+		"id": "agent-uuid-tp",
+		"gatherEnv": true,
+		"grovePath": "` + groveDir + `",
+		"config": {"template": "claude", "profile": "default"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var envReqs EnvRequirementsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &envReqs); err != nil {
+		t.Fatal("failed to decode response:", err)
+	}
+
+	if envReqs.SecretInfo == nil {
+		t.Fatal("expected SecretInfo to be set")
+	}
+
+	// Check ENV_SECRET has type "environment"
+	if info, ok := envReqs.SecretInfo["ENV_SECRET"]; !ok {
+		t.Error("expected ENV_SECRET in SecretInfo")
+	} else if info.Type != "environment" {
+		t.Errorf("expected ENV_SECRET type='environment', got %q", info.Type)
+	}
+
+	// Check FILE_CERT has type "file"
+	if info, ok := envReqs.SecretInfo["FILE_CERT"]; !ok {
+		t.Error("expected FILE_CERT in SecretInfo")
+	} else if info.Type != "file" {
+		t.Errorf("expected FILE_CERT type='file', got %q", info.Type)
+	}
+
+	// Check PROFILE_TOKEN has type "variable"
+	if info, ok := envReqs.SecretInfo["PROFILE_TOKEN"]; !ok {
+		t.Error("expected PROFILE_TOKEN in SecretInfo")
+	} else if info.Type != "variable" {
+		t.Errorf("expected PROFILE_TOKEN type='variable', got %q", info.Type)
+	}
+
+	// ANTHROPIC_API_KEY is a harness key — should have no type (empty string)
+	if info, ok := envReqs.SecretInfo["ANTHROPIC_API_KEY"]; ok {
+		// Harness keys are auto-added to SecretInfo but shouldn't appear in
+		// the response if they're already satisfied (in hubHas/brokerHas).
+		// If it does appear, type should be empty.
+		if info.Type != "" {
+			t.Errorf("expected ANTHROPIC_API_KEY type='', got %q", info.Type)
+		}
+	}
+}
+
+// TestEnvGather_SecretInfoIncludesType_Template tests that Type is populated
+// from template RequiredSecrets in the create request.
+func TestEnvGather_SecretInfoIncludesType_Template(t *testing.T) {
+	settings := `
+schema_version: "1"
+harness_configs:
+  claude:
+    harness: claude
+profiles:
+  default:
+    runtime: docker
+`
+	srv, _, groveDir := newTestServerWithGrovePath(t, settings)
+
+	// Satisfy harness key via broker env
+	t.Setenv("ANTHROPIC_API_KEY", "broker-ant-key")
+
+	body := `{
+		"name": "test-agent-type-tmpl",
+		"id": "agent-uuid-tt",
+		"gatherEnv": true,
+		"grovePath": "` + groveDir + `",
+		"requiredSecrets": [
+			{"key": "TMPL_FILE_SECRET", "description": "Template file secret", "type": "file"},
+			{"key": "TMPL_ENV_SECRET", "description": "Template env secret", "type": "environment"}
+		],
+		"config": {"template": "claude", "profile": "default"}
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+
+	srv.Handler().ServeHTTP(w, req)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var envReqs EnvRequirementsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &envReqs); err != nil {
+		t.Fatal("failed to decode response:", err)
+	}
+
+	if envReqs.SecretInfo == nil {
+		t.Fatal("expected SecretInfo to be set")
+	}
+
+	if info, ok := envReqs.SecretInfo["TMPL_FILE_SECRET"]; !ok {
+		t.Error("expected TMPL_FILE_SECRET in SecretInfo")
+	} else {
+		if info.Type != "file" {
+			t.Errorf("expected TMPL_FILE_SECRET type='file', got %q", info.Type)
+		}
+		if info.Source != "template" {
+			t.Errorf("expected TMPL_FILE_SECRET source='template', got %q", info.Source)
+		}
+	}
+
+	if info, ok := envReqs.SecretInfo["TMPL_ENV_SECRET"]; !ok {
+		t.Error("expected TMPL_ENV_SECRET in SecretInfo")
+	} else if info.Type != "environment" {
+		t.Errorf("expected TMPL_ENV_SECRET type='environment', got %q", info.Type)
+	}
+}
+
 // TestEnvGather_SettingsSecretsMerge tests that when the same key is declared
 // in both harness config and profile, the profile description wins (most specific).
 func TestEnvGather_SettingsSecretsMerge(t *testing.T) {

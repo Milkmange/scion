@@ -36,7 +36,20 @@ import (
 	"github.com/ptone/scion-agent/pkg/util"
 	"github.com/ptone/scion-agent/pkg/wsclient"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
+
+// readSecretFunc reads a password/secret from a file descriptor with echo disabled.
+// It is a variable so tests can override it.
+var readSecretFunc = func(fd int) ([]byte, error) {
+	return term.ReadPassword(fd)
+}
+
+// isInteractiveTerminal reports whether the process is running in an
+// interactive terminal. It is a variable so tests can override it.
+var isInteractiveTerminal = func() bool {
+	return util.IsTerminal()
+}
 
 var (
 	templateName      string
@@ -897,6 +910,12 @@ func gatherAndSubmitEnv(ctx context.Context, hubCtx *HubContext, groveID string,
 			fmt.Fprintf(os.Stderr, "\nIn non-interactive mode, environment variables cannot be forwarded from the local environment.\n")
 			fmt.Fprintf(os.Stderr, "Make them available via the Hub or broker configuration:\n")
 			for _, key := range gather.Needs {
+				if gather.SecretInfo != nil {
+					if _, ok := gather.SecretInfo[key]; ok {
+						fmt.Fprintf(os.Stderr, "  scion hub secret set %s <value>\n", key)
+						continue
+					}
+				}
 				fmt.Fprintf(os.Stderr, "  scion hub env set %s <value>\n", key)
 			}
 			fmt.Fprintln(os.Stderr)
@@ -922,23 +941,99 @@ func gatherAndSubmitEnv(ctx context.Context, hubCtx *HubContext, groveID string,
 		}
 	}
 
-	if len(missingKeys) > 0 {
-		if !isJSONOutput() {
-			fmt.Fprintln(os.Stderr)
-			for _, key := range missingKeys {
-				if gather.SecretInfo != nil {
-					if info, ok := gather.SecretInfo[key]; ok && info.Description != "" {
-						fmt.Fprintf(os.Stderr, "  %s — MISSING: %s\n", key, info.Description)
-						continue
-					}
+	// Categorize missing keys into promptable secrets, file secrets, and env-only
+	var secretEligible []string // can prompt interactively
+	var fileSecrets []string    // file-type secrets, guide to scion hub secret set --type file
+	var envOnly []string        // not secret-eligible, must fail
+	for _, key := range missingKeys {
+		if gather.SecretInfo != nil {
+			if info, ok := gather.SecretInfo[key]; ok {
+				if info.Type == "file" {
+					fileSecrets = append(fileSecrets, key)
+				} else {
+					secretEligible = append(secretEligible, key)
 				}
-				fmt.Fprintf(os.Stderr, "  %s — MISSING (not in local environment)\n", key)
+				continue
+			}
+		}
+		envOnly = append(envOnly, key)
+	}
+
+	// Interactive prompting for secret-eligible keys
+	var promptedCount int
+	if len(secretEligible) > 0 && isInteractiveTerminal() && !nonInteractive {
+		statusln("\nThe following secrets are required and not in the local environment.")
+		statusln("You can enter them now (input is hidden):")
+		for _, key := range secretEligible {
+			if gather.SecretInfo != nil {
+				if info, ok := gather.SecretInfo[key]; ok && info.Description != "" {
+					statusf("  %s: %s\n", key, info.Description)
+				}
+			}
+			fmt.Fprintf(os.Stderr, "  Enter value for %s: ", key)
+			secret, err := readSecretFunc(int(os.Stdin.Fd()))
+			fmt.Fprintln(os.Stderr) // newline after hidden input
+			if err != nil {
+				return nil, fmt.Errorf("failed to read secret for %s: %w", key, err)
+			}
+			val := strings.TrimSpace(string(secret))
+			if val == "" {
+				// Empty input — will be handled below as unsatisfied
+				continue
+			}
+			gatheredEnv[key] = val
+			promptedCount++
+		}
+	}
+
+	// Determine which keys remain unsatisfied after prompting
+	var unsatisfied []string
+	for _, key := range secretEligible {
+		if _, ok := gatheredEnv[key]; !ok {
+			unsatisfied = append(unsatisfied, key)
+		}
+	}
+
+	// File-type secrets cannot be entered interactively
+	if len(fileSecrets) > 0 && !isJSONOutput() {
+		fmt.Fprintln(os.Stderr)
+		for _, key := range fileSecrets {
+			desc := ""
+			if gather.SecretInfo != nil {
+				if info, ok := gather.SecretInfo[key]; ok && info.Description != "" {
+					desc = ": " + info.Description
+				}
+			}
+			fmt.Fprintf(os.Stderr, "  %s — file-type secret, cannot be entered interactively%s\n", key, desc)
+			fmt.Fprintf(os.Stderr, "    scion hub secret set --type file %s @./path/to/file\n", key)
+		}
+	}
+
+	// Fail if there are any unsatisfied keys
+	allUnsatisfied := append(append(envOnly, fileSecrets...), unsatisfied...)
+	if len(allUnsatisfied) > 0 {
+		if !isJSONOutput() {
+			if len(envOnly) > 0 {
+				fmt.Fprintln(os.Stderr)
+				for _, key := range envOnly {
+					fmt.Fprintf(os.Stderr, "  %s — MISSING (not in local environment)\n", key)
+				}
+			}
+			if len(unsatisfied) > 0 {
+				fmt.Fprintln(os.Stderr)
+				for _, key := range unsatisfied {
+					fmt.Fprintf(os.Stderr, "  %s — MISSING (secret not entered)\n", key)
+				}
 			}
 			fmt.Fprintf(os.Stderr, "\nTo set missing variables on the Hub, use:\n")
-			for _, key := range missingKeys {
+			for _, key := range allUnsatisfied {
 				if gather.SecretInfo != nil {
-					if _, ok := gather.SecretInfo[key]; ok {
-						fmt.Fprintf(os.Stderr, "  scion hub secret set %s <value>\n", key)
+					if info, ok := gather.SecretInfo[key]; ok {
+						if info.Type == "file" {
+							fmt.Fprintf(os.Stderr, "  scion hub secret set --type file %s @./path/to/file\n", key)
+						} else {
+							fmt.Fprintf(os.Stderr, "  scion hub secret set %s <value>\n", key)
+						}
 						continue
 					}
 				}
@@ -946,7 +1041,7 @@ func gatherAndSubmitEnv(ctx context.Context, hubCtx *HubContext, groveID string,
 			}
 			fmt.Fprintln(os.Stderr)
 		}
-		return nil, fmt.Errorf("cannot satisfy required environment variables: %v", missingKeys)
+		return nil, fmt.Errorf("cannot satisfy required environment variables: %v", allUnsatisfied)
 	}
 
 	if len(gatheredEnv) == 0 {
@@ -955,7 +1050,7 @@ func gatherAndSubmitEnv(ctx context.Context, hubCtx *HubContext, groveID string,
 	}
 
 	// In interactive mode, confirm before sending env vars
-	if util.IsTerminal() && !autoConfirm {
+	if isInteractiveTerminal() && !autoConfirm {
 		reader := bufio.NewReader(os.Stdin)
 		fmt.Fprintf(os.Stderr, "\nSend %d environment variable(s) to use in provisioning this agent? (will not be stored) [Y/n]: ", len(gatheredEnv))
 		input, err := reader.ReadString('\n')
@@ -980,6 +1075,16 @@ func gatherAndSubmitEnv(ctx context.Context, hubCtx *HubContext, groveID string,
 
 	if debugMode {
 		util.Debugf("[env-gather] gatherAndSubmitEnv: submitted %d env var(s), agent should now start", len(gatheredEnv))
+	}
+
+	// Show persistence tip if any secrets were entered interactively
+	if promptedCount > 0 {
+		statusln("\nTip: To avoid entering secrets each time, store them permanently:")
+		for _, key := range secretEligible {
+			if _, ok := gatheredEnv[key]; ok {
+				statusf("  scion hub secret set %s <value>\n", key)
+			}
+		}
 	}
 
 	return submitResp, nil

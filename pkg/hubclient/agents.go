@@ -148,7 +148,8 @@ type CreateAgentResponse struct {
 // SecretKeyInfo provides metadata about a required secret key.
 type SecretKeyInfo struct {
 	Description string `json:"description,omitempty"`
-	Source      string `json:"source"` // "harness", "template", "settings"
+	Source      string `json:"source"`                // "harness", "template", "settings"
+	Type        string `json:"type,omitempty"`         // "environment" (default), "variable", "file"
 }
 
 type EnvGatherResponse struct {

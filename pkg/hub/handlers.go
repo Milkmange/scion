@@ -641,6 +641,7 @@ func (s *Server) buildEnvGatherResponse(ctx context.Context, agent *store.Agent,
 			resp.SecretInfo[k] = SecretKeyInfo{
 				Description: v.Description,
 				Source:      v.Source,
+				Type:        v.Type,
 			}
 		}
 	}
