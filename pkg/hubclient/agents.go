@@ -56,6 +56,9 @@ type AgentService interface {
 	// SubmitEnv submits gathered environment variables for an agent after a 202 env-gather response.
 	SubmitEnv(ctx context.Context, agentID string, req *SubmitEnvRequest) (*CreateAgentResponse, error)
 
+	// Restore restores a soft-deleted agent.
+	Restore(ctx context.Context, agentID string) (*Agent, error)
+
 	// Exec executes a command in an agent container.
 	Exec(ctx context.Context, agentID string, command []string, timeout int) (*ExecResponse, error)
 
@@ -85,11 +88,12 @@ func (s *agentService) agentsPath() string {
 
 // ListAgentsOptions configures agent list filtering.
 type ListAgentsOptions struct {
-	GroveID       string            // Filter by grove
-	Status        string            // Filter by status
+	GroveID         string            // Filter by grove
+	Status          string            // Filter by status
 	RuntimeBrokerID string            // Filter by runtime broker
-	Labels        map[string]string // Label selector
-	Page          apiclient.PageOptions
+	Labels          map[string]string // Label selector
+	IncludeDeleted  bool              // Include soft-deleted agents
+	Page            apiclient.PageOptions
 }
 
 // ListAgentsResponse is the response from listing agents.
@@ -174,6 +178,7 @@ type UpdateAgentRequest struct {
 type DeleteAgentOptions struct {
 	DeleteFiles  bool // Also delete agent files
 	RemoveBranch bool // Remove git branch
+	Force        bool // Force hard-delete even when soft-delete is configured
 }
 
 // GetLogsOptions configures log retrieval.
@@ -200,6 +205,9 @@ func (s *agentService) List(ctx context.Context, opts *ListAgentsOptions) (*List
 		}
 		if opts.RuntimeBrokerID != "" {
 			query.Set("runtimeBrokerId", opts.RuntimeBrokerID)
+		}
+		if opts.IncludeDeleted {
+			query.Set("includeDeleted", "true")
 		}
 		for k, v := range opts.Labels {
 			query.Add("label", fmt.Sprintf("%s=%s", k, v))
@@ -281,6 +289,9 @@ func (s *agentService) Delete(ctx context.Context, agentID string, opts *DeleteA
 		if opts.RemoveBranch {
 			query.Set("removeBranch", "true")
 		}
+		if opts.Force {
+			query.Set("force", "true")
+		}
 		if len(query) > 0 {
 			path += "?" + query.Encode()
 		}
@@ -318,6 +329,15 @@ func (s *agentService) Restart(ctx context.Context, agentID string) error {
 		return err
 	}
 	return apiclient.CheckResponse(resp)
+}
+
+// Restore restores a soft-deleted agent.
+func (s *agentService) Restore(ctx context.Context, agentID string) (*Agent, error) {
+	resp, err := s.c.transport.Post(ctx, s.agentPath(agentID)+"/restore", nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return apiclient.DecodeResponse[Agent](resp)
 }
 
 // SendMessage sends a message to an agent.

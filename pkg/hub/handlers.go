@@ -240,9 +240,10 @@ func (s *Server) listAgents(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
 	filter := store.AgentFilter{
-		GroveID:       query.Get("groveId"),
+		GroveID:         query.Get("groveId"),
 		RuntimeBrokerID: query.Get("runtimeBrokerId"),
-		Status:        query.Get("status"),
+		Status:          query.Get("status"),
+		IncludeDeleted:  query.Get("includeDeleted") == "true",
 	}
 
 	limit := 50
@@ -1160,9 +1161,40 @@ func (s *Server) handleAgentAction(w http.ResponseWriter, r *http.Request, id, a
 		s.handleAgentLifecycle(w, r, id, action)
 	case "message":
 		s.handleAgentMessage(w, r, id)
+	case "restore":
+		s.restoreAgent(w, r, id)
 	default:
 		NotFound(w, "Action")
 	}
+}
+
+// restoreAgent restores a soft-deleted agent.
+func (s *Server) restoreAgent(w http.ResponseWriter, r *http.Request, id string) {
+	ctx := r.Context()
+
+	agent, err := s.store.GetAgent(ctx, id)
+	if err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	if agent.Status != store.AgentStatusDeleted {
+		BadRequest(w, "Agent is not in deleted state")
+		return
+	}
+
+	agent.Status = store.AgentStatusRestored
+	agent.DeletedAt = time.Time{}
+	agent.Updated = time.Now()
+
+	if err := s.store.UpdateAgent(ctx, agent); err != nil {
+		writeErrorFromErr(w, err, "")
+		return
+	}
+
+	s.events.PublishAgentCreated(ctx, agent)
+
+	writeJSON(w, http.StatusOK, agent.ToAPI())
 }
 
 // MessageRequest is the request body for sending a message to an agent.
@@ -1942,9 +1974,10 @@ func (s *Server) listGroveAgents(w http.ResponseWriter, r *http.Request, groveID
 	query := r.URL.Query()
 
 	filter := store.AgentFilter{
-		GroveID:       groveID,
+		GroveID:         groveID,
 		RuntimeBrokerID: query.Get("runtimeBrokerId"),
-		Status:        query.Get("status"),
+		Status:          query.Get("status"),
+		IncludeDeleted:  query.Get("includeDeleted") == "true",
 	}
 
 	limit := 50
@@ -2404,6 +2437,8 @@ func (s *Server) handleGroveAgentAction(w http.ResponseWriter, r *http.Request, 
 		s.handleAgentMessage(w, r, agent.ID)
 	case "env":
 		s.submitAgentEnv(w, r, groveID, agentID)
+	case "restore":
+		s.restoreAgent(w, r, agent.ID)
 	default:
 		NotFound(w, "Action")
 	}

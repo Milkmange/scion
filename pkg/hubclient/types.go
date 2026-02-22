@@ -46,6 +46,7 @@ type Agent struct {
 	Created         time.Time         `json:"created"`
 	Updated         time.Time         `json:"updated"`
 	LastSeen        time.Time         `json:"lastSeen,omitempty"`
+	DeletedAt       time.Time         `json:"deletedAt,omitempty"`
 	CreatedBy       string            `json:"createdBy,omitempty"`
 	OwnerID         string            `json:"ownerId,omitempty"`
 	Visibility      string            `json:"visibility,omitempty"`
