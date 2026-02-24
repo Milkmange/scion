@@ -1,7 +1,9 @@
 # Demo Policy Implementation Plan
 
 ## Status
-**Proposed** — 2026-02-24
+**In Progress** — 2026-02-24
+
+Steps 1-3, 7, 8 completed. Steps 4-6, 9 remaining.
 
 ## 1. Goal
 
@@ -120,9 +122,9 @@ These are left open intentionally. The default-deny behavior of the policy engin
 
 ## 4. Implementation Steps
 
-### Step 1: Hub Initialization — System Groups and Seed Policies
+### Step 1: Hub Initialization — System Groups and Seed Policies ✅
 
-**Files**: `pkg/hub/server.go` (or new `pkg/hub/seed.go`)
+**Files**: `pkg/hub/server.go`, `pkg/hub/seed.go` (new)
 
 Add a `seedDefaultPoliciesAndGroups()` method called during Hub server startup (after store initialization). This method:
 
@@ -148,9 +150,9 @@ Add a `seedDefaultPoliciesAndGroups()` method called during Hub server startup (
 - Add a `Name` field to `PolicyFilter` (preferred — simple store change), or
 - List all hub-scoped policies and filter in-memory (acceptable for a small number of seed policies)
 
-### Step 2: User Registration — Auto-Join Hub Members Group
+### Step 2: User Registration — Auto-Join Hub Members Group ✅
 
-**Files**: `pkg/hub/handlers_auth.go`
+**Files**: `pkg/hub/handlers_auth.go`, `pkg/hub/web.go`
 
 In the user creation/login flow (the `completeOAuthLogin` function and similar paths where users are created or have their session established), add the user to the `hub-members` group if they aren't already a member.
 
@@ -171,7 +173,7 @@ if err == nil {
 
 **Note**: A `GetGroupBySlug` method may need to be added to the store interface if it doesn't exist. Alternatively, use `ListGroups` with a slug filter.
 
-### Step 3: Grove Creation — Members Group and Policy
+### Step 3: Grove Creation — Members Group and Policy ✅
 
 **Files**: `pkg/hub/handlers.go`
 
@@ -310,29 +312,21 @@ if action == "message" || action == "start" || action == "stop" || action == "re
 
 Similarly, in the PTY WebSocket handler (`handleAgentPTY`), add an ownership check before upgrading the connection.
 
-### Step 7: Store Additions
+### Step 7: Store Additions ✅
 
-**Files**: `pkg/store/store.go`, `pkg/store/sqlite/sqlite.go` (and/or `pkg/store/entadapter/`)
+**Files**: `pkg/store/store.go`, `pkg/store/sqlite/sqlite.go`, `pkg/store/entadapter/policy_store.go`
 
 Minor additions needed:
 
-1. **`GetGroupBySlug(ctx, slug) (*Group, error)`** — retrieve a group by its slug. Needed for idempotent hub-members group lookup. If this method doesn't exist, add it to `GroupStore` and implement in SQLite.
+1. **`GetGroupBySlug(ctx, slug) (*Group, error)`** — already existed in the store interface.
 
-2. **`PolicyFilter.Name string`** — add optional name filter to `PolicyFilter` for idempotent seed policy lookup. Implement in SQLite's `ListPolicies` query.
+2. **`PolicyFilter.Name string`** — added optional name filter to `PolicyFilter` for idempotent seed policy lookup. Implemented in both SQLite and entadapter `ListPolicies` queries.
 
-Both are small, additive changes to existing interfaces.
-
-### Step 8: Grove Registration Path
+### Step 8: Grove Registration Path ✅
 
 **Files**: `pkg/hub/handlers.go`
 
-The `handleGroveRoutes` function has a registration path (around line 1746) where existing groves are registered with the Hub. This path already calls `createGroveGroup`. It must also:
-
-1. Create the grove members group (same as Step 3)
-2. Add the registering user as a member
-3. Create the grove-level policy
-
-This ensures groves created via `scion hub register` (the CLI registration flow) get the same policy treatment as groves created via the web API.
+The `handleGroveRegister` handler's registration path already calls `createGroveGroup`. Added a call to `createGroveMembersGroupAndPolicy` immediately after, ensuring groves created via `scion hub register` (the CLI registration flow) get the same policy treatment as groves created via the web API.
 
 ### Step 9: Tests
 
@@ -392,12 +386,12 @@ This implementation is designed as a foundation, not a dead end. The following e
 ## 6. Implementation Sequence & Dependencies
 
 ```
-Step 1: Seed groups/policies on Hub init
+Step 1: Seed groups/policies on Hub init ✅
   │
-  ├── Step 2: Auto-join hub-members on user login
+  ├── Step 2: Auto-join hub-members on user login ✅
   │     (depends on hub-members group from Step 1)
   │
-  └── Step 3: Grove creation → members group + policy
+  └── Step 3: Grove creation → members group + policy ✅
         │
         ├── Step 4: Enforce agent creation (depends on grove-level policy from Step 3)
         │
@@ -405,12 +399,14 @@ Step 1: Seed groups/policies on Hub init
         │
         └── Step 6: Enforce agent attach/PTY (independent — uses owner bypass only)
 
-Step 7: Store additions (prerequisite for Steps 1-3)
-Step 8: Grove registration path (parallel to Step 3)
+Step 7: Store additions (prerequisite for Steps 1-3) ✅
+Step 8: Grove registration path (parallel to Step 3) ✅
 Step 9: Tests (after Steps 1-8)
 ```
 
 **Recommended order**: Step 7 → Step 1 → Step 2 → Step 3 + Step 8 → Steps 4, 5, 6 (parallel) → Step 9
+
+**Remaining**: Steps 4, 5, 6 (enforcement checks in handlers) and Step 9 (tests)
 
 ---
 
