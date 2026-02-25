@@ -3,6 +3,6 @@ image: us-central1-docker.pkg.dev/ptone-misc/public-docker/scion-adk-agent:lates
 user: scion
 task_flag: "--input"
 args:
-  - adk
-  - run
-  - /opt/adk_scion_agent/adk_scion_agent
+  - python
+  - -m
+  - adk_scion_agent

@@ -15,11 +15,15 @@ An example [ADK (Agent Development Kit)](https://google.github.io/adk-docs/) age
 cp examples/adk_scion_agent/.env.example examples/adk_scion_agent/.env
 # Edit .env and set GOOGLE_API_KEY
 
+# Interactive mode (no initial task):
 cd examples
-adk run adk_scion_agent
+python -m adk_scion_agent
+
+# With an initial task via --input:
+python -m adk_scion_agent --input "write a hello world script"
 ```
 
-The agent starts an interactive session. Type a task and the agent will work through it, using `file_write` to create files and `sciontool_status` to signal lifecycle events.
+The agent starts an interactive session. Type a task and the agent will work through it, using `file_write` to create files and `sciontool_status` to signal lifecycle events. The `--input` flag sends an initial message before entering the interactive loop.
 
 When running outside a scion container, `sciontool` won't be on PATH — the agent works normally but status reporting is silently skipped.
 
@@ -31,7 +35,7 @@ The included `Dockerfile` builds on `scion-base` (which provides sciontool, tmux
 docker build -t scion-adk-agent examples/adk_scion_agent/
 ```
 
-The image installs `google-adk` into a virtualenv and copies the agent source to `/opt/adk_scion_agent/`. The default CMD is `adk run /opt/adk_scion_agent/adk_scion_agent`.
+The image installs `google-adk` into a virtualenv and copies the agent source to `/opt/adk_scion_agent/`. The default CMD is `python -m adk_scion_agent`, which uses a custom runner that supports `--input` for task delivery.
 
 ## Deploying via Scion Template
 
@@ -48,7 +52,7 @@ cp -r examples/adk_scion_agent/templates/adk/harness-configs/adk .scion/harness-
 scion start my-agent --template adk
 ```
 
-The template uses the **generic** harness with `args` set to `["adk", "run", "/opt/adk_scion_agent/adk_scion_agent"]`. The generic harness passes these as the container command, and scion wraps it in a tmux session for message delivery.
+The template uses the **generic** harness with `args` set to `["python", "-m", "adk_scion_agent"]` and `task_flag: "--input"`. When scion starts the agent with a task, it appends `--input <task>` to the command. The generic harness passes these as the container command, and scion wraps it in a tmux session for message delivery.
 
 ## Running Inside a Scion Container
 
@@ -102,7 +106,9 @@ For Vertex AI, set `GOOGLE_GENAI_USE_VERTEXAI=true` and configure Application De
 ```
 adk_scion_agent/
 ├── Dockerfile         # Container image (built on scion-base)
-├── __init__.py        # ADK package entry point
+├── __init__.py        # ADK package entry point (exports root_agent)
+├── __main__.py        # python -m adk_scion_agent entrypoint
+├── run.py             # Custom runner with --input flag support
 ├── agent.py           # root_agent definition, auth bridging, model config
 ├── tools.py           # file_write and sciontool_status tools
 ├── callbacks.py       # ADK callbacks → scion status updates

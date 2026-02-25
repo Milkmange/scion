@@ -30,9 +30,13 @@ RUN python3 -m venv /opt/adk-venv && \
 # Put the venv on PATH so `adk` CLI is available to all users.
 ENV PATH="/opt/adk-venv/bin:${PATH}"
 
-# Copy the agent source code.
+# Copy the agent source code and ensure Python can find the package.
 COPY --chown=scion:scion . /opt/adk_scion_agent/adk_scion_agent/
+ENV PYTHONPATH="/opt/adk_scion_agent:${PYTHONPATH}"
 
-# Default command: run the ADK agent interactively.
-# scion's runtime layer wraps this in `tmux new-session -s scion ...`
-CMD ["adk", "run", "/opt/adk_scion_agent/adk_scion_agent"]
+# Default command: run the ADK agent via the custom runner entrypoint.
+# The custom runner supports --input for task delivery (which the released
+# `adk run` CLI does not yet support). scion's runtime layer wraps this in
+# `tmux new-session -s scion ...` and appends `--input <task>` when task_flag
+# is configured.
+CMD ["python", "-m", "adk_scion_agent"]
