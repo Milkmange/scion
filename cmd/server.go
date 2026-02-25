@@ -636,6 +636,12 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		hubSrv.SetSecretBackend(secretBackend)
 		log.Printf("Secret backend configured: %s", cfg.Secrets.Backend)
 
+		// Bootstrap local templates into Hub if database is empty
+		globalTemplatesDir := filepath.Join(globalDir, "templates")
+		if err := hubSrv.BootstrapTemplatesFromDir(ctx, globalTemplatesDir); err != nil {
+			log.Printf("Warning: template bootstrap failed: %v", err)
+		}
+
 		log.Printf("Database: %s (%s)", cfg.Database.Driver, cfg.Database.URL)
 
 		if !enableWeb {
