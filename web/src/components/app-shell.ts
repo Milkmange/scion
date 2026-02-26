@@ -67,6 +67,7 @@ export class ScionApp extends LitElement {
     :host {
       display: flex;
       height: 100vh;
+      height: 100dvh;
       background: var(--scion-bg, #f8fafc);
     }
 

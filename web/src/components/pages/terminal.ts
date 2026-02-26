@@ -69,6 +69,7 @@ export class ScionPageTerminal extends LitElement {
   private fitAddon: FitAddon | null = null;
   private socket: WebSocket | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private resizeTimer: ReturnType<typeof setTimeout> | null = null;
 
   static override styles = css`
     :host {
@@ -352,11 +353,13 @@ export class ScionPageTerminal extends LitElement {
       this.sendData(data);
     });
 
-    // Handle terminal resize
+    // Handle terminal resize — fit immediately for visual feedback,
+    // debounce the WebSocket resize message to avoid flooding tmux
     this.resizeObserver = new ResizeObserver(() => {
       if (this.fitAddon) {
         this.fitAddon.fit();
-        this.sendResize();
+        if (this.resizeTimer) clearTimeout(this.resizeTimer);
+        this.resizeTimer = setTimeout(() => this.sendResize(), 100);
       }
     });
     this.resizeObserver.observe(container);
@@ -461,6 +464,10 @@ export class ScionPageTerminal extends LitElement {
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
+    }
+    if (this.resizeTimer) {
+      clearTimeout(this.resizeTimer);
+      this.resizeTimer = null;
     }
     this.fitAddon = null;
   }
