@@ -261,13 +261,38 @@ func TestGeminiResolveAuth_AutoDetectAPIKey(t *testing.T) {
 	}
 }
 
-func TestGeminiResolveAuth_AutoDetectADCOnly(t *testing.T) {
+func TestGeminiResolveAuth_AutoDetectADCVertexAI(t *testing.T) {
 	g := &GeminiCLI{}
-	// ADC alone should not auto-detect for gemini; OAuth is required for file-based auth
+	// ADC with cloud project auto-detects as vertex-ai
+	auth := api.AuthConfig{
+		GoogleAppCredentials: "/path/to/adc.json",
+		GoogleCloudProject:   "my-project",
+	}
+	result, err := g.ResolveAuth(auth)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Method != "vertex-ai" {
+		t.Errorf("Method = %q, want %q", result.Method, "vertex-ai")
+	}
+	if result.EnvVars["GEMINI_DEFAULT_AUTH_TYPE"] != "vertex-ai" {
+		t.Errorf("GEMINI_DEFAULT_AUTH_TYPE = %q, want %q", result.EnvVars["GEMINI_DEFAULT_AUTH_TYPE"], "vertex-ai")
+	}
+	if result.EnvVars["GOOGLE_CLOUD_PROJECT"] != "my-project" {
+		t.Errorf("GOOGLE_CLOUD_PROJECT = %q, want %q", result.EnvVars["GOOGLE_CLOUD_PROJECT"], "my-project")
+	}
+	if len(result.Files) != 1 || result.Files[0].ContainerPath != "~/.config/gcloud/application_default_credentials.json" {
+		t.Errorf("expected ADC file mapping, got %v", result.Files)
+	}
+}
+
+func TestGeminiResolveAuth_AutoDetectADCWithoutProject(t *testing.T) {
+	g := &GeminiCLI{}
+	// ADC without cloud project should not auto-detect
 	auth := api.AuthConfig{GoogleAppCredentials: "/path/to/adc.json"}
 	_, err := g.ResolveAuth(auth)
 	if err == nil {
-		t.Fatal("expected error for auto-detect with only ADC (no OAuth creds)")
+		t.Fatal("expected error for auto-detect with ADC but no cloud project")
 	}
 }
 

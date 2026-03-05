@@ -354,7 +354,7 @@ func (g *GeminiCLI) resolveExplicit(auth api.AuthConfig) (*api.ResolvedAuth, err
 }
 
 func (g *GeminiCLI) resolveAutoDetect(auth api.AuthConfig) (*api.ResolvedAuth, error) {
-	// Auto-detect priority: API key → OAuth → error
+	// Auto-detect priority: API key → OAuth → ADC (vertex-ai) → error
 
 	// 1. API key
 	if auth.GeminiAPIKey != "" || auth.GoogleAPIKey != "" {
@@ -393,7 +393,32 @@ func (g *GeminiCLI) resolveAutoDetect(auth api.AuthConfig) (*api.ResolvedAuth, e
 		return result, nil
 	}
 
-	return nil, fmt.Errorf("gemini: no valid auth method found; set GEMINI_API_KEY or GOOGLE_API_KEY for API key auth, or set up OAuth credentials at ~/.gemini/oauth_creds.json")
+	// 3. ADC → vertex-ai (requires cloud project)
+	if auth.GoogleAppCredentials != "" && auth.GoogleCloudProject != "" {
+		adcContainerPath := "~/.config/gcloud/application_default_credentials.json"
+		result := &api.ResolvedAuth{
+			Method: "vertex-ai",
+			EnvVars: map[string]string{
+				"GEMINI_DEFAULT_AUTH_TYPE": "vertex-ai",
+				"GOOGLE_CLOUD_PROJECT":    auth.GoogleCloudProject,
+			},
+			Files: []api.FileMapping{
+				{
+					SourcePath:    auth.GoogleAppCredentials,
+					ContainerPath: adcContainerPath,
+				},
+			},
+		}
+		if auth.GoogleAppCredentialsExplicit {
+			result.EnvVars["GOOGLE_APPLICATION_CREDENTIALS"] = adcContainerPath
+		}
+		if auth.GoogleCloudRegion != "" {
+			result.EnvVars["GOOGLE_CLOUD_REGION"] = auth.GoogleCloudRegion
+		}
+		return result, nil
+	}
+
+	return nil, fmt.Errorf("gemini: no valid auth method found; set GEMINI_API_KEY or GOOGLE_API_KEY for API key auth, set up OAuth credentials at ~/.gemini/oauth_creds.json, or provide ADC with GOOGLE_CLOUD_PROJECT for vertex-ai")
 }
 
 func (g *GeminiCLI) InjectSystemPrompt(agentHome string, content []byte) error {
