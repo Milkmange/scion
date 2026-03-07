@@ -1132,6 +1132,13 @@ func TestHTTPAgentDispatcher_DispatchAgentStart_IncludesAgentIdentity(t *testing
 	} else if v != "test-agent-slug" {
 		t.Errorf("expected SCION_AGENT_SLUG='test-agent-slug', got %q", v)
 	}
+
+	// Verify SCION_GROVE_ID is included in resolvedEnv
+	if v, ok := mockClient.lastResolvedEnv["SCION_GROVE_ID"]; !ok {
+		t.Error("expected SCION_GROVE_ID in resolvedEnv, but not found")
+	} else if v != "grove-1" {
+		t.Errorf("expected SCION_GROVE_ID='grove-1', got %q", v)
+	}
 }
 
 func TestHTTPAgentDispatcher_DispatchAgentStart_HubNativeGrove(t *testing.T) {

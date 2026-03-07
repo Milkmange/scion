@@ -381,6 +381,7 @@ func TestCreateAgentWithHubCredentials(t *testing.T) {
 	body := `{
 		"name": "test-agent",
 		"id": "agent-uuid-123",
+		"groveId": "grove-uuid-456",
 		"hubEndpoint": "https://hub.example.com",
 		"agentToken": "secret-token-xyz",
 		"config": {"template": "claude"}
@@ -418,6 +419,11 @@ func TestCreateAgentWithHubCredentials(t *testing.T) {
 	// Check SCION_AGENT_ID
 	if got := mgr.lastEnv["SCION_AGENT_ID"]; got != "agent-uuid-123" {
 		t.Errorf("expected SCION_AGENT_ID='agent-uuid-123', got %q", got)
+	}
+
+	// Check SCION_GROVE_ID
+	if got := mgr.lastEnv["SCION_GROVE_ID"]; got != "grove-uuid-456" {
+		t.Errorf("expected SCION_GROVE_ID='grove-uuid-456', got %q", got)
 	}
 }
 

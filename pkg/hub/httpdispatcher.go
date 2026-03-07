@@ -777,6 +777,9 @@ func (d *HTTPAgentDispatcher) DispatchAgentStart(ctx context.Context, agent *sto
 	if agent.ID != "" {
 		resolvedEnv["SCION_AGENT_ID"] = agent.ID
 	}
+	if agent.GroveID != "" {
+		resolvedEnv["SCION_GROVE_ID"] = agent.GroveID
+	}
 	if agent.Slug != "" {
 		resolvedEnv["SCION_AGENT_SLUG"] = agent.Slug
 	}

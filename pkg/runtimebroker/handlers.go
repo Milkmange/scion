@@ -446,6 +446,12 @@ func (s *Server) createAgent(w http.ResponseWriter, r *http.Request) {
 			s.agentLifecycleLog.Debug("SCION_AGENT_ID set", "id", req.ID)
 		}
 	}
+	if req.GroveID != "" {
+		env["SCION_GROVE_ID"] = req.GroveID
+		if s.config.Debug {
+			s.agentLifecycleLog.Debug("SCION_GROVE_ID set", "id", req.GroveID)
+		}
+	}
 
 	if s.config.BrokerName != "" {
 		env["SCION_BROKER_NAME"] = s.config.BrokerName
