@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -224,6 +225,37 @@ Examples:
 
 var serverStatusJSON bool
 
+// serverInstallCmd generates a service file for the current platform
+var serverInstallCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Generate a system service file for Scion server",
+	Long: `Generate a systemd (Linux) or launchd (macOS) service file for running
+the Scion server as a managed system service.
+
+The generated file uses --foreground mode so the service manager handles
+lifecycle, logging, and restart. Workstation mode defaults apply unless
+--production is specified.
+
+On Linux, generates a systemd unit file.
+On macOS, generates a launchd plist file.
+
+Examples:
+  # Generate a service file (prints to stdout)
+  scion server install
+
+  # Install directly on Linux (systemd user service)
+  scion server install > ~/.config/systemd/user/scion-server.service
+  systemctl --user daemon-reload
+  systemctl --user enable --now scion-server
+
+  # Install directly on macOS (launchd user agent)
+  scion server install > ~/Library/LaunchAgents/io.scion.server.plist
+  launchctl load ~/Library/LaunchAgents/io.scion.server.plist`,
+	RunE: runServerInstall,
+}
+
+var serverInstallProduction bool
+
 // portStatus represents the result of checking a port.
 type portStatus struct {
 	inUse        bool
@@ -402,6 +434,12 @@ func runServerStartOrDaemon(cmd *cobra.Command, args []string) error {
 	fmt.Printf("Log file: %s\n", daemon.GetLogPathComponent(serverDaemonComponent, globalDir))
 	fmt.Printf("PID file: %s\n", daemon.GetPIDPathComponent(serverDaemonComponent, globalDir))
 	fmt.Println()
+
+	// Print quickstart info for workstation mode
+	if !productionMode {
+		printWorkstationQuickstart(globalDir, hubHost, webPort, enableWeb, enableDevAuth)
+	}
+
 	fmt.Println("Use 'scion server stop' to stop the daemon.")
 	fmt.Println("Use 'scion server status' to check status.")
 
@@ -1515,6 +1553,21 @@ func runServerStart(cmd *cobra.Command, args []string) error {
 		log.Printf("Simulating remote broker: skipping automatic global grove registration")
 	}
 
+	// Print startup banner for foreground workstation mode
+	if !productionMode {
+		log.Println("Scion server ready (workstation mode)")
+		if enableWeb {
+			displayHost := cfg.Hub.Host
+			if displayHost == "0.0.0.0" || displayHost == "" {
+				displayHost = "127.0.0.1"
+			}
+			log.Printf("Web UI: http://%s:%d", displayHost, webPort)
+		}
+		if devAuthToken != "" {
+			log.Printf("Dev token: export SCION_DEV_TOKEN=%s", devAuthToken)
+		}
+	}
+
 	// Wait for either an error or context cancellation
 	select {
 	case err := <-errCh:
@@ -1895,12 +1948,141 @@ func redactForDebug(value string) string {
 	return value[:4] + "..." + value[len(value)-4:] + " (" + fmt.Sprintf("%d", len(value)) + " chars)"
 }
 
+func runServerInstall(cmd *cobra.Command, args []string) error {
+	executable, err := os.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to find scion executable: %w", err)
+	}
+
+	// Resolve to absolute path
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		return fmt.Errorf("failed to resolve executable path: %w", err)
+	}
+
+	switch goos := goruntime.GOOS; goos {
+	case "linux":
+		return generateSystemdUnit(executable, serverInstallProduction)
+	case "darwin":
+		return generateLaunchdPlist(executable, serverInstallProduction)
+	default:
+		return fmt.Errorf("unsupported platform %q; only linux (systemd) and darwin (launchd) are supported", goos)
+	}
+}
+
+func generateSystemdUnit(executable string, production bool) error {
+	args := "server start --foreground"
+	if production {
+		args = "server start --foreground --production"
+	}
+
+	description := "Scion Workstation Server"
+	if production {
+		description = "Scion Server (Production)"
+	}
+
+	unit := fmt.Sprintf(`[Unit]
+Description=%s
+After=network.target docker.service
+
+[Service]
+Type=simple
+ExecStart=%s %s
+ExecStop=%s server stop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+`, description, executable, args, executable)
+
+	fmt.Print(unit)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "To install as a systemd user service:")
+	fmt.Fprintln(os.Stderr, "  mkdir -p ~/.config/systemd/user")
+	fmt.Fprintln(os.Stderr, "  scion server install > ~/.config/systemd/user/scion-server.service")
+	fmt.Fprintln(os.Stderr, "  systemctl --user daemon-reload")
+	fmt.Fprintln(os.Stderr, "  systemctl --user enable --now scion-server")
+	return nil
+}
+
+func generateLaunchdPlist(executable string, production bool) error {
+	args := []string{executable, "server", "start", "--foreground"}
+	if production {
+		args = append(args, "--production")
+	}
+
+	// Build ProgramArguments XML entries
+	var argEntries string
+	for _, arg := range args {
+		argEntries += fmt.Sprintf("        <string>%s</string>\n", arg)
+	}
+
+	label := "io.scion.server"
+	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>%s</string>
+    <key>ProgramArguments</key>
+    <array>
+%s    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>/tmp/scion-server.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/scion-server.log</string>
+</dict>
+</plist>
+`, label, argEntries)
+
+	fmt.Print(plist)
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "To install as a launchd user agent:")
+	fmt.Fprintln(os.Stderr, "  scion server install > ~/Library/LaunchAgents/io.scion.server.plist")
+	fmt.Fprintln(os.Stderr, "  launchctl load ~/Library/LaunchAgents/io.scion.server.plist")
+	return nil
+}
+
+// printWorkstationQuickstart prints the first-run quickstart information
+// including the dev token and web UI URL after a workstation-mode daemon starts.
+func printWorkstationQuickstart(globalDir string, host string, wPort int, webEnabled, devAuth bool) {
+	if webEnabled {
+		displayHost := host
+		if displayHost == "0.0.0.0" || displayHost == "" {
+			displayHost = "127.0.0.1"
+		}
+		fmt.Printf("Web UI:  http://%s:%d\n", displayHost, wPort)
+	}
+
+	if devAuth {
+		// Read the dev token from the token file (written by the daemon child process)
+		tokenFile := filepath.Join(globalDir, "dev-token")
+		if data, err := os.ReadFile(tokenFile); err == nil {
+			token := strings.TrimSpace(string(data))
+			if token != "" {
+				fmt.Println()
+				fmt.Println("Dev token (for CLI authentication):")
+				fmt.Printf("  export SCION_DEV_TOKEN=%s\n", token)
+			}
+		}
+	}
+	fmt.Println()
+}
+
 func init() {
 	rootCmd.AddCommand(serverCmd)
 	serverCmd.AddCommand(serverStartCmd)
 	serverCmd.AddCommand(serverStopCmd)
 	serverCmd.AddCommand(serverRestartCmd)
 	serverCmd.AddCommand(serverStatusCmd)
+	serverCmd.AddCommand(serverInstallCmd)
 
 	// Server start flags
 	serverStartCmd.Flags().BoolVar(&serverStartForeground, "foreground", false, "Run in foreground instead of as daemon")
@@ -1949,6 +2131,9 @@ func init() {
 
 	// Status flags
 	serverStatusCmd.Flags().BoolVar(&serverStatusJSON, "json", false, "Output in JSON format")
+
+	// Install flags
+	serverInstallCmd.Flags().BoolVar(&serverInstallProduction, "production", false, "Generate service file for production mode")
 }
 
 // containerBridgeEndpoint returns a container-accessible URL that replaces

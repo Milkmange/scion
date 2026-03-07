@@ -1,6 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"io"
+	"os"
+	"path/filepath"
+	goruntime "runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -150,4 +155,184 @@ func TestBrokerDelegationUsesProductionMode(t *testing.T) {
 	assert.True(t, enableRuntimeBroker, "runtime broker should be enabled")
 	assert.False(t, enableHub, "hub should NOT be enabled (broker-only)")
 	assert.False(t, enableWeb, "web should NOT be enabled (broker-only)")
+}
+
+func TestPrintWorkstationQuickstart(t *testing.T) {
+	// Create a temp dir with a dev-token file
+	dir := t.TempDir()
+	token := "scion_dev_abc123"
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "dev-token"), []byte(token+"\n"), 0600))
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	printWorkstationQuickstart(dir, "127.0.0.1", 8080, true, true)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	assert.Contains(t, output, "http://127.0.0.1:8080", "should show web UI URL")
+	assert.Contains(t, output, "export SCION_DEV_TOKEN="+token, "should show dev token export")
+}
+
+func TestPrintWorkstationQuickstart_NoWeb(t *testing.T) {
+	dir := t.TempDir()
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	printWorkstationQuickstart(dir, "127.0.0.1", 8080, false, false)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	assert.NotContains(t, output, "Web UI", "should not show web UI when disabled")
+	assert.NotContains(t, output, "SCION_DEV_TOKEN", "should not show token when dev-auth disabled")
+}
+
+func TestPrintWorkstationQuickstart_WildcardHost(t *testing.T) {
+	dir := t.TempDir()
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	printWorkstationQuickstart(dir, "0.0.0.0", 9090, true, false)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	assert.Contains(t, output, "http://127.0.0.1:9090", "should replace 0.0.0.0 with 127.0.0.1")
+}
+
+func TestGenerateSystemdUnit(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("systemd tests only run on linux")
+	}
+
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := generateSystemdUnit("/usr/local/bin/scion", false)
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	assert.Contains(t, output, "[Unit]")
+	assert.Contains(t, output, "Scion Workstation Server")
+	assert.Contains(t, output, "ExecStart=/usr/local/bin/scion server start --foreground")
+	assert.NotContains(t, output, "--production")
+	assert.Contains(t, output, "[Install]")
+}
+
+func TestGenerateSystemdUnit_Production(t *testing.T) {
+	if goruntime.GOOS != "linux" {
+		t.Skip("systemd tests only run on linux")
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := generateSystemdUnit("/usr/local/bin/scion", true)
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	assert.Contains(t, output, "Scion Server (Production)")
+	assert.Contains(t, output, "--production")
+}
+
+func TestGenerateLaunchdPlist(t *testing.T) {
+	if goruntime.GOOS != "darwin" {
+		t.Skip("launchd tests only run on darwin")
+	}
+
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	err := generateLaunchdPlist("/usr/local/bin/scion", false)
+	require.NoError(t, err)
+
+	w.Close()
+	os.Stdout = old
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	assert.Contains(t, output, "io.scion.server")
+	assert.Contains(t, output, "<string>/usr/local/bin/scion</string>")
+	assert.Contains(t, output, "<string>--foreground</string>")
+	assert.NotContains(t, output, "--production")
+}
+
+func TestRunServerInstall(t *testing.T) {
+	// Test that install runs on the current platform without error
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	// Also capture stderr (install hints go there)
+	oldErr := os.Stderr
+	rErr, wErr, _ := os.Pipe()
+	os.Stderr = wErr
+
+	err := runServerInstall(nil, nil)
+
+	w.Close()
+	wErr.Close()
+	os.Stdout = old
+	os.Stderr = oldErr
+
+	var buf bytes.Buffer
+	io.Copy(&buf, r)
+	output := buf.String()
+
+	var errBuf bytes.Buffer
+	io.Copy(&errBuf, rErr)
+	stderrOutput := errBuf.String()
+
+	switch goruntime.GOOS {
+	case "linux":
+		require.NoError(t, err)
+		assert.Contains(t, output, "[Unit]")
+		assert.Contains(t, stderrOutput, "systemd")
+	case "darwin":
+		require.NoError(t, err)
+		assert.Contains(t, output, "plist")
+		assert.Contains(t, stderrOutput, "launchd")
+	default:
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported platform")
+	}
+
 }

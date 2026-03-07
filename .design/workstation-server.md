@@ -302,10 +302,10 @@ This would probe the health endpoints (`/healthz`) on the known ports, and check
    When `mode: production` is set in config, the server behaves as if `--production` were passed. Workstation mode remains the default when no mode is configured.
 2. ✅ **Persist daemon args** so `scion server restart` can re-launch with the same flags without requiring the user to re-specify them. Store in `~/.scion/server-args.json`.
 
-### Phase 4: Polish
+### Phase 4: Polish ✅ COMPLETE
 
-1. **First-run experience**: `scion server start` prints the dev token and a quickstart URL.
-2. **`scion server install`**: (Optional) Generate systemd/launchd service files for the current platform.
+1. ✅ **First-run experience**: `scion server start` prints the dev token and a quickstart URL (Web UI URL + `export SCION_DEV_TOKEN=...`). Both daemon mode (reads from `~/.scion/dev-token`) and foreground mode (prints after all components start) are covered.
+2. ✅ **`scion server install`**: Generate systemd/launchd service files for the current platform. Supports `--production` flag. Outputs service file to stdout with installation instructions on stderr.
 
 ## Files to Modify
 
