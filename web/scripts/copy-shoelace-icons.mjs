@@ -73,6 +73,7 @@ const USED_ICONS = [
   'plus-circle',
   'plus-lg',
   'question-circle',
+  'send',
   'shield-lock',
   'shield-x',
   'sliders',
