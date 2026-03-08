@@ -1,6 +1,9 @@
 check_for_update_on_startup = false
-approval_policy = "full-auto"
-notify = "sh ~/.codex/scion_notify.sh"
+approval_policy = "never"
+
+# Note this notify script is commented out as experimental
+# TODO remove and replace when codex lands full hook support
+# notify = "sh ~/.codex/scion_notify.sh"
 
 model = "gpt-5.3-codex"
 model_reasoning_effort = "medium"
@@ -16,6 +19,9 @@ trust_level = "trusted"
 [otel]
 # Scion reconciles these values at agent start time when telemetry is enabled.
 enabled = false
-exporter = "otlp"
-protocol = "grpc"
-endpoint = "localhost:4317"
+log_user_prompt = false   # redact user prompts unless explicitly enabled
+exporter = { otlp-grpc = {
+  endpoint = "localhost:4317",
+  headers = { "x-otlp-meta" = "abc123" }
+}}
+
