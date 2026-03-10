@@ -128,6 +128,9 @@ fi
 echo "Adding/ensuring roles on service account..."
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member "serviceAccount:${SERVICE_ACCOUNT_EMAIL}" \
+    --role "roles/logging.viewer" > /dev/null
+gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
+    --member "serviceAccount:${SERVICE_ACCOUNT_EMAIL}" \
     --role "roles/logging.logWriter" > /dev/null
 gcloud projects add-iam-policy-binding "${PROJECT_ID}" \
     --member "serviceAccount:${SERVICE_ACCOUNT_EMAIL}" \
