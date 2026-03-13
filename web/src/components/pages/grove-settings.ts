@@ -28,6 +28,7 @@ import { can, canAny } from '../../shared/types.js';
 import { apiFetch } from '../../client/api.js';
 import '../shared/env-var-list.js';
 import '../shared/secret-list.js';
+import '../shared/shared-dir-list.js';
 
 @customElement('scion-page-grove-settings')
 export class ScionPageGroveSettings extends LitElement {
@@ -320,6 +321,11 @@ export class ScionPageGroveSettings extends LitElement {
           apiBasePath="/api/v1/groves/${this.groveId}"
           compact
         ></scion-secret-list>
+
+        <scion-shared-dir-list
+          groveId=${this.groveId}
+          apiBasePath="/api/v1/groves/${this.groveId}"
+        ></scion-shared-dir-list>
       ` : ''}
 
       ${can(this.grove._capabilities, 'delete') ? html`

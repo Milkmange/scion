@@ -460,6 +460,15 @@ export interface Secret {
   updatedBy?: string;
 }
 
+/**
+ * Shared directory for a grove (grove-level shared filesystem between agents)
+ */
+export interface SharedDir {
+  name: string;
+  read_only?: boolean;
+  in_workspace?: boolean;
+}
+
 export type BrokerStatus = 'online' | 'offline' | 'degraded';
 
 /**

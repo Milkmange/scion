@@ -2765,6 +2765,18 @@ func (s *Server) handleGroveRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check for nested /shared-dirs path
+	if strings.HasPrefix(subPath, "shared-dirs") {
+		sdPath := strings.TrimPrefix(subPath, "shared-dirs")
+		sdPath = strings.TrimPrefix(sdPath, "/")
+		if sdPath == "" {
+			s.handleGroveSharedDirs(w, r, groveID)
+		} else {
+			s.handleGroveSharedDirByName(w, r, groveID, sdPath)
+		}
+		return
+	}
+
 	// Check for nested /broadcast path (message broker broadcast)
 	if subPath == "broadcast" {
 		s.handleGroveBroadcast(w, r, groveID)

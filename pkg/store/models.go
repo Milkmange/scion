@@ -160,6 +160,9 @@ type Grove struct {
 	OwnerID    string `json:"ownerId,omitempty"`
 	Visibility string `json:"visibility"` // private, team, public
 
+	// Configuration (stored as JSON)
+	SharedDirs []api.SharedDir `json:"sharedDirs,omitempty"`
+
 	// Computed fields (not stored, populated on read)
 	AgentCount        int    `json:"agentCount,omitempty"`
 	ActiveBrokerCount int    `json:"activeBrokerCount,omitempty"`
