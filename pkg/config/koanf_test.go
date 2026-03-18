@@ -336,7 +336,7 @@ hub:
 	}
 }
 
-func TestLoadSettingsKoanfV1GroveIDNoOverrideTopLevel(t *testing.T) {
+func TestLoadSettingsKoanfV1GroveIDHubWinsOverTopLevel(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	originalHome := os.Getenv("HOME")
@@ -349,8 +349,10 @@ func TestLoadSettingsKoanfV1GroveIDNoOverrideTopLevel(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Create a legacy format settings file with top-level grove_id
-	// AND hub.grove_id — the top-level should take precedence
+	// Create a settings file with both top-level grove_id and hub.grove_id.
+	// hub.grove_id is the canonical v1 location and should always take
+	// precedence — this is critical for the merge scenario where global
+	// sets top-level grove_id and the grove sets hub.grove_id.
 	legacySettings := `grove_id: "top-level-id"
 hub:
   enabled: true
@@ -365,9 +367,9 @@ hub:
 		t.Fatalf("LoadSettingsKoanf failed: %v", err)
 	}
 
-	// Top-level grove_id should be preserved, not overridden by hub.grove_id
-	if s.GroveID != "top-level-id" {
-		t.Errorf("expected top-level GroveID 'top-level-id', got '%s'", s.GroveID)
+	// hub.grove_id (canonical v1 location) should win
+	if s.GroveID != "hub-level-id" {
+		t.Errorf("expected GroveID 'hub-level-id' (from hub.grove_id), got '%s'", s.GroveID)
 	}
 }
 
@@ -586,4 +588,103 @@ workspace_path: /tmp/my-project
 	require.NoError(t, err)
 	assert.Equal(t, "local-grove-id-12345", s2.GroveID, "grove_id must survive UpdateSetting round-trip")
 	assert.Equal(t, "https://hub.new.example.com", s2.Hub.Endpoint, "hub endpoint should be updated")
+}
+
+func TestLoadSettingsKoanf_GroveIDFileOverridesGlobal(t *testing.T) {
+	// Simulates a git grove where grove_id is stored in a grove-id file
+	// rather than in the settings file. The global settings have a different
+	// hub.grove_id that should NOT bleed into the project grove.
+	tmpDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	for _, env := range []string{"SCION_HUB_ENDPOINT", "SCION_HUB_GROVE_ID"} {
+		if orig, ok := os.LookupEnv(env); ok {
+			os.Unsetenv(env)
+			t.Cleanup(func() { os.Setenv(env, orig) })
+		}
+	}
+
+	// Global settings with a grove_id (simulating a linked global grove)
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	require.NoError(t, os.MkdirAll(globalScionDir, 0755))
+	globalSettings := `schema_version: "1"
+hub:
+  grove_id: "global-grove-id"
+  enabled: true
+  linked: true
+  endpoint: "https://hub.example.com"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(globalScionDir, "settings.yaml"), []byte(globalSettings), 0644))
+
+	// Git grove .scion directory with grove-id file but NO grove_id in settings
+	groveScionDir := filepath.Join(tmpDir, "my-project", ".scion")
+	require.NoError(t, os.MkdirAll(groveScionDir, 0755))
+
+	// Write the grove-id file (as initInRepoGrove does)
+	require.NoError(t, WriteGroveID(groveScionDir, "project-grove-id-from-file"))
+
+	// Create a minimal grove settings file in the external config dir
+	// (simulating ensureGroveSettingsFile which doesn't include grove_id)
+	groveConfigDir, err := GetGitGroveExternalConfigDir(groveScionDir)
+	require.NoError(t, err)
+	require.NoError(t, os.MkdirAll(groveConfigDir, 0755))
+	groveSettings := `schema_version: "1"
+active_profile: local
+`
+	require.NoError(t, os.WriteFile(filepath.Join(groveConfigDir, "settings.yaml"), []byte(groveSettings), 0644))
+
+	// Load settings for the project grove
+	s, err := LoadSettingsKoanf(groveScionDir)
+	require.NoError(t, err)
+
+	// The grove-id file should take precedence over global hub.grove_id
+	assert.Equal(t, "project-grove-id-from-file", s.GroveID,
+		"grove_id should come from grove-id file, not global settings")
+}
+
+func TestLoadSettingsKoanf_GlobalGroveIDDoesNotBleedIntoProject(t *testing.T) {
+	// Verifies that when global settings have hub.grove_id set (from linking
+	// the global grove) and a project grove also has its own hub.grove_id,
+	// the project's value is used — not the global's.
+	tmpDir := t.TempDir()
+
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	for _, env := range []string{"SCION_HUB_ENDPOINT", "SCION_HUB_GROVE_ID"} {
+		if orig, ok := os.LookupEnv(env); ok {
+			os.Unsetenv(env)
+			t.Cleanup(func() { os.Setenv(env, orig) })
+		}
+	}
+
+	// Global settings with grove_id at top level (legacy format)
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	require.NoError(t, os.MkdirAll(globalScionDir, 0755))
+	globalSettings := `grove_id: "global-grove-id-legacy"
+hub:
+  enabled: true
+  endpoint: "https://hub.example.com"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(globalScionDir, "settings.yaml"), []byte(globalSettings), 0644))
+
+	// Project grove settings with hub.grove_id (v1 format)
+	groveDir := filepath.Join(tmpDir, "my-project", ".scion")
+	require.NoError(t, os.MkdirAll(groveDir, 0755))
+	groveSettings := `schema_version: "1"
+hub:
+  grove_id: "project-grove-id"
+`
+	require.NoError(t, os.WriteFile(filepath.Join(groveDir, "settings.yaml"), []byte(groveSettings), 0644))
+
+	s, err := LoadSettingsKoanf(groveDir)
+	require.NoError(t, err)
+
+	// Project's hub.grove_id should override global's top-level grove_id
+	assert.Equal(t, "project-grove-id", s.GroveID,
+		"grove_id should come from project hub.grove_id, not global top-level grove_id")
 }

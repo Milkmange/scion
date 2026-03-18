@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/providers/rawbytes"
@@ -586,6 +587,20 @@ func LoadVersionedSettings(grovePath string) (*VersionedSettings, error) {
 
 	// 4. Load environment variables (SCION_ prefix)
 	_ = k.Load(env.Provider("SCION_", ".", versionedEnvKeyMapper), nil)
+
+	// For git groves, the grove_id is stored in a grove-id file inside the
+	// .scion directory rather than in the settings file. Read it here so that
+	// it overrides any hub.grove_id inherited from global settings.
+	if grovePath != "" {
+		globalDir, _ := GetGlobalDir()
+		if grovePath != globalDir {
+			if groveID, err := ReadGroveID(grovePath); err == nil && groveID != "" {
+				_ = k.Load(confmap.Provider(map[string]interface{}{
+					"hub.grove_id": groveID,
+				}, "."), nil)
+			}
+		}
+	}
 
 	// Unmarshal into VersionedSettings struct
 	settings := &VersionedSettings{

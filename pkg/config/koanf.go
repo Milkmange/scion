@@ -105,10 +105,26 @@ func LoadSettingsKoanf(grovePath string) (*Settings, error) {
 	// legacy Settings struct expects it at the top level (grove_id). The
 	// HubClientConfig struct uses koanf tag "groveId" (camelCase), so the
 	// v1 key hub.grove_id doesn't match either location without remapping.
-	if k.Exists("hub.grove_id") && !k.Exists("grove_id") {
+	// Always remap (unconditionally) because after the koanf merge chain,
+	// hub.grove_id reflects the most specific (grove-level) value and must
+	// take precedence over any top-level grove_id inherited from global.
+	if k.Exists("hub.grove_id") {
 		_ = k.Load(confmap.Provider(map[string]interface{}{
 			"grove_id": k.String("hub.grove_id"),
 		}, "."), nil)
+	}
+
+	// For git groves, the grove_id is stored in a grove-id file inside the
+	// .scion directory rather than in the settings file. Read it here so that
+	// it overrides any grove_id inherited from global settings. The original
+	// grovePath points to the .scion directory (before resolveEffectiveGrovePath
+	// redirects to the external config dir).
+	if grovePath != "" && grovePath != globalDir {
+		if groveID, err := ReadGroveID(grovePath); err == nil && groveID != "" {
+			_ = k.Load(confmap.Provider(map[string]interface{}{
+				"grove_id": groveID,
+			}, "."), nil)
+		}
 	}
 
 	// In v1 format, broker identity fields are stored under server.broker.*
