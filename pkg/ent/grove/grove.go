@@ -185,6 +185,6 @@ func newGroupsStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroupsInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.O2M, true, GroupsTable, GroupsColumn),
+		sqlgraph.Edge(sqlgraph.O2M, false, GroupsTable, GroupsColumn),
 	)
 }

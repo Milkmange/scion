@@ -39,7 +39,7 @@ var (
 		{Name: "slug", Type: field.TypeString},
 		{Name: "name", Type: field.TypeString},
 		{Name: "template", Type: field.TypeString, Nullable: true},
-		{Name: "status", Type: field.TypeEnum, Enums: []string{"provisioning", "running", "stopped", "error", "pending"}, Default: "pending"},
+		{Name: "status", Type: field.TypeEnum, Enums: []string{"created", "provisioning", "cloning", "starting", "running", "stopping", "stopped", "error"}, Default: "created"},
 		{Name: "delegation_enabled", Type: field.TypeBool, Default: false},
 		{Name: "visibility", Type: field.TypeString, Default: "private"},
 		{Name: "created", Type: field.TypeTime},
@@ -103,7 +103,7 @@ var (
 		PrimaryKey: []*schema.Column{GroupsColumns[0]},
 		ForeignKeys: []*schema.ForeignKey{
 			{
-				Symbol:     "groups_groves_grove",
+				Symbol:     "groups_groves_groups",
 				Columns:    []*schema.Column{GroupsColumns[10]},
 				RefColumns: []*schema.Column{GrovesColumns[0]},
 				OnDelete:   schema.SetNull,

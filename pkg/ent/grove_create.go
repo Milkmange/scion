@@ -10,10 +10,10 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/google/uuid"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/agent"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/group"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/grove"
+	"github.com/google/uuid"
 )
 
 // GroveCreate is the builder for creating a Grove entity.
@@ -349,7 +349,7 @@ func (_c *GroveCreate) createSpec() (*Grove, *sqlgraph.CreateSpec) {
 	if nodes := _c.mutation.GroupsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
-			Inverse: true,
+			Inverse: false,
 			Table:   grove.GroupsTable,
 			Columns: []string{grove.GroupsColumn},
 			Bidi:    false,

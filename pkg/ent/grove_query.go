@@ -12,11 +12,11 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/google/uuid"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/agent"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/group"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/grove"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/predicate"
+	"github.com/google/uuid"
 )
 
 // GroveQuery is the builder for querying Grove entities.
@@ -100,7 +100,7 @@ func (_q *GroveQuery) QueryGroups() *GroupQuery {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(grove.Table, grove.FieldID, selector),
 			sqlgraph.To(group.Table, group.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, true, grove.GroupsTable, grove.GroupsColumn),
+			sqlgraph.Edge(sqlgraph.O2M, false, grove.GroupsTable, grove.GroupsColumn),
 		)
 		fromU = sqlgraph.SetNeighbors(_q.driver.Dialect(), step)
 		return fromU, nil

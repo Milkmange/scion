@@ -274,3 +274,52 @@ func TestCompositeStore_CreateGroup_WithGroveID(t *testing.T) {
 	assert.Equal(t, groveID, group.GroveID)
 	assert.Equal(t, "grove:shadow-grove:agents", group.Slug)
 }
+
+// TestCompositeStore_CreateGroup_MultipleGroupsPerGrove verifies that multiple
+// groups (agents + members) can reference the same grove. The grove_id FK must
+// NOT have a unique constraint.
+func TestCompositeStore_CreateGroup_MultipleGroupsPerGrove(t *testing.T) {
+	cs := newTestCompositeStore(t)
+	ctx := context.Background()
+
+	groveID := uuid.New().String()
+	err := cs.Store.CreateGrove(ctx, &store.Grove{
+		ID:      groveID,
+		Name:    "Multi-Group Grove",
+		Slug:    "multi-group-grove",
+		Created: time.Now(),
+		Updated: time.Now(),
+	})
+	require.NoError(t, err)
+
+	// Create agents group
+	agentsGroupID := uuid.New().String()
+	err = cs.CreateGroup(ctx, &store.Group{
+		ID:        agentsGroupID,
+		Name:      "Multi-Group Grove Agents",
+		Slug:      "grove:multi-group-grove:agents",
+		GroupType: store.GroupTypeGroveAgents,
+		GroveID:   groveID,
+	})
+	require.NoError(t, err, "agents group creation should succeed")
+
+	// Create members group for the same grove — this must NOT fail
+	membersGroupID := uuid.New().String()
+	err = cs.CreateGroup(ctx, &store.Group{
+		ID:        membersGroupID,
+		Name:      "Multi-Group Grove Members",
+		Slug:      "grove:multi-group-grove:members",
+		GroupType: store.GroupTypeExplicit,
+		GroveID:   groveID,
+	})
+	require.NoError(t, err, "members group creation should succeed for same grove")
+
+	// Verify both groups exist with the correct grove ID
+	agents, err := cs.GetGroup(ctx, agentsGroupID)
+	require.NoError(t, err)
+	assert.Equal(t, groveID, agents.GroveID)
+
+	members, err := cs.GetGroup(ctx, membersGroupID)
+	require.NoError(t, err)
+	assert.Equal(t, groveID, members.GroveID)
+}

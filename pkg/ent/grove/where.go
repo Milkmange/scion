@@ -7,8 +7,8 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"github.com/google/uuid"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/predicate"
+	"github.com/google/uuid"
 )
 
 // ID filters vertices based on their ID field.
@@ -644,7 +644,7 @@ func HasGroups() predicate.Grove {
 	return predicate.Grove(func(s *sql.Selector) {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(Table, FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, true, GroupsTable, GroupsColumn),
+			sqlgraph.Edge(sqlgraph.O2M, false, GroupsTable, GroupsColumn),
 		)
 		sqlgraph.HasNeighbors(s, step)
 	})

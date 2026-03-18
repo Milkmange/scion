@@ -75,7 +75,8 @@ func (Group) Edges() []ent.Edge {
 			Ref("owned_groups").
 			Field("owner_id").
 			Unique(),
-		edge.To("grove", Grove.Type).
+		edge.From("grove", Grove.Type).
+			Ref("groups").
 			Field("grove_id").
 			Unique(),
 		edge.From("policy_bindings", PolicyBinding.Type).

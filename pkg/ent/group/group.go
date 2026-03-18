@@ -316,7 +316,7 @@ func newGroveStep() *sqlgraph.Step {
 	return sqlgraph.NewStep(
 		sqlgraph.From(Table, FieldID),
 		sqlgraph.To(GroveInverseTable, FieldID),
-		sqlgraph.Edge(sqlgraph.M2O, false, GroveTable, GroveColumn),
+		sqlgraph.Edge(sqlgraph.M2O, true, GroveTable, GroveColumn),
 	)
 }
 func newPolicyBindingsStep() *sqlgraph.Step {

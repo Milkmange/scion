@@ -11,11 +11,11 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
-	"github.com/google/uuid"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/agent"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/group"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/grove"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/predicate"
+	"github.com/google/uuid"
 )
 
 // GroveUpdate is the builder for updating Grove entities.
@@ -393,7 +393,7 @@ func (_u *GroveUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if _u.mutation.GroupsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
-			Inverse: true,
+			Inverse: false,
 			Table:   grove.GroupsTable,
 			Columns: []string{grove.GroupsColumn},
 			Bidi:    false,
@@ -406,7 +406,7 @@ func (_u *GroveUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if nodes := _u.mutation.RemovedGroupsIDs(); len(nodes) > 0 && !_u.mutation.GroupsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
-			Inverse: true,
+			Inverse: false,
 			Table:   grove.GroupsTable,
 			Columns: []string{grove.GroupsColumn},
 			Bidi:    false,
@@ -422,7 +422,7 @@ func (_u *GroveUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	if nodes := _u.mutation.GroupsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
-			Inverse: true,
+			Inverse: false,
 			Table:   grove.GroupsTable,
 			Columns: []string{grove.GroupsColumn},
 			Bidi:    false,
@@ -847,7 +847,7 @@ func (_u *GroveUpdateOne) sqlSave(ctx context.Context) (_node *Grove, err error)
 	if _u.mutation.GroupsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
-			Inverse: true,
+			Inverse: false,
 			Table:   grove.GroupsTable,
 			Columns: []string{grove.GroupsColumn},
 			Bidi:    false,
@@ -860,7 +860,7 @@ func (_u *GroveUpdateOne) sqlSave(ctx context.Context) (_node *Grove, err error)
 	if nodes := _u.mutation.RemovedGroupsIDs(); len(nodes) > 0 && !_u.mutation.GroupsCleared() {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
-			Inverse: true,
+			Inverse: false,
 			Table:   grove.GroupsTable,
 			Columns: []string{grove.GroupsColumn},
 			Bidi:    false,
@@ -876,7 +876,7 @@ func (_u *GroveUpdateOne) sqlSave(ctx context.Context) (_node *Grove, err error)
 	if nodes := _u.mutation.GroupsIDs(); len(nodes) > 0 {
 		edge := &sqlgraph.EdgeSpec{
 			Rel:     sqlgraph.O2M,
-			Inverse: true,
+			Inverse: false,
 			Table:   grove.GroupsTable,
 			Columns: []string{grove.GroupsColumn},
 			Bidi:    false,

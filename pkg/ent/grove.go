@@ -10,8 +10,8 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/google/uuid"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/grove"
+	"github.com/google/uuid"
 )
 
 // Grove is the model entity for the Grove schema.

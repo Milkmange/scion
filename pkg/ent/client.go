@@ -9,8 +9,8 @@ import (
 	"log"
 	"reflect"
 
-	"github.com/google/uuid"
 	"github.com/GoogleCloudPlatform/scion/pkg/ent/migrate"
+	"github.com/google/uuid"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
@@ -798,7 +798,7 @@ func (c *GroupClient) QueryGrove(_m *Group) *GroveQuery {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(group.Table, group.FieldID, id),
 			sqlgraph.To(grove.Table, grove.FieldID),
-			sqlgraph.Edge(sqlgraph.M2O, false, group.GroveTable, group.GroveColumn),
+			sqlgraph.Edge(sqlgraph.M2O, true, group.GroveTable, group.GroveColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil
@@ -1160,7 +1160,7 @@ func (c *GroveClient) QueryGroups(_m *Grove) *GroupQuery {
 		step := sqlgraph.NewStep(
 			sqlgraph.From(grove.Table, grove.FieldID, id),
 			sqlgraph.To(group.Table, group.FieldID),
-			sqlgraph.Edge(sqlgraph.O2M, true, grove.GroupsTable, grove.GroupsColumn),
+			sqlgraph.Edge(sqlgraph.O2M, false, grove.GroupsTable, grove.GroupsColumn),
 		)
 		fromV = sqlgraph.Neighbors(_m.driver.Dialect(), step)
 		return fromV, nil

@@ -68,7 +68,6 @@ func (Grove) Fields() []ent.Field {
 func (Grove) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("agents", Agent.Type),
-		edge.From("groups", Group.Type).
-			Ref("grove"),
+		edge.To("groups", Group.Type),
 	}
 }
