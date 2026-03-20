@@ -230,7 +230,7 @@ func (r *KubernetesRuntime) Run(ctx context.Context, config RunConfig) (string, 
 			}
 		} else {
 			if _, err := r.createAgentSecret(ctx, namespace, config.Name, config.ResolvedSecrets, config.Labels); err != nil {
-				return "", fmt.Errorf("failed to create agent secret: %w", err)
+				return "", fmt.Errorf("failed to launch container: %w", err)
 			}
 		}
 	}

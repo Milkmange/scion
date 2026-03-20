@@ -116,6 +116,9 @@ func GetRuntime(grovePath string, profileName string) Runtime {
 		if err != nil {
 			return &ErrorRuntime{Err: err}
 		}
+		if err := k8sClient.Verify(); err != nil {
+			return &ErrorRuntime{Err: err}
+		}
 		rt := NewKubernetesRuntime(k8sClient)
 		if rtConfig.Namespace != "" {
 			rt.DefaultNamespace = rtConfig.Namespace

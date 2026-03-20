@@ -17,6 +17,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/GoogleCloudPlatform/scion/pkg/k8s/api/v1alpha1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -104,6 +105,38 @@ func NewClientWithContext(kubeconfigPath, contextName string) (*Client, error) {
 		Config:         config,
 		CurrentContext: currentContext,
 	}, nil
+}
+
+// Verify performs a lightweight API call (ServerVersion) to validate that
+// cluster connectivity and credentials work. This catches exec-based auth
+// plugin failures (e.g. gke-gcloud-auth-plugin) early with actionable errors
+// instead of letting them surface as confusing nested errors on the first real
+// API call.
+func (c *Client) Verify() error {
+	_, err := c.Clientset.Discovery().ServerVersion()
+	if err != nil {
+		errMsg := err.Error()
+
+		// Detect exec-based credential plugin failures and provide guidance.
+		if strings.Contains(errMsg, "getting credentials: exec:") {
+			hint := "Kubernetes credential plugin failed. "
+			if strings.Contains(errMsg, "gke-gcloud-auth-plugin") {
+				hint += "The gke-gcloud-auth-plugin could not obtain credentials. " +
+					"Ensure the hub/broker process inherits the same environment as your shell " +
+					"(HOME, PATH, CLOUDSDK_CONFIG, GOOGLE_APPLICATION_CREDENTIALS). " +
+					"If running as a systemd service, verify these are set in the unit file. " +
+					"You can test with: gke-gcloud-auth-plugin --version"
+			} else {
+				hint += "Ensure the credential plugin is installed and the process environment " +
+					"includes the necessary variables (HOME, PATH, cloud SDK config)."
+			}
+			return fmt.Errorf("%s — underlying error: %w", hint, err)
+		}
+
+		return fmt.Errorf("failed to connect to Kubernetes cluster: %w", err)
+	}
+
+	return nil
 }
 
 func NewTestClient(dyn dynamic.Interface, cs kubernetes.Interface) *Client {

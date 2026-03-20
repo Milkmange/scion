@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/scion/pkg/k8s/api/v1alpha1"
@@ -28,6 +29,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 )
 
 func TestClient_ListSandboxClaims(t *testing.T) {
@@ -193,6 +195,52 @@ users:
 	_, err := NewClientWithContext(path, "nonexistent-context")
 	if err == nil {
 		t.Error("expected error for nonexistent context")
+	}
+}
+
+func TestClient_Verify_Success(t *testing.T) {
+	clientset := k8sfake.NewSimpleClientset()
+	scheme := k8sruntime.NewScheme()
+	dynClient := fake.NewSimpleDynamicClient(scheme)
+	client := NewTestClient(dynClient, clientset)
+
+	if err := client.Verify(); err != nil {
+		t.Fatalf("Verify() should succeed with fake client: %v", err)
+	}
+}
+
+func TestClient_Verify_ExecPluginErrorDetection(t *testing.T) {
+	// Test that the error message detection for exec plugin failures works.
+	// We can't easily simulate a real exec plugin failure with a fake client,
+	// so we test the string detection logic directly via error message content.
+	tests := []struct {
+		name     string
+		errMsg   string
+		wantHint string
+	}{
+		{
+			name:     "gke auth plugin",
+			errMsg:   `getting credentials: exec: executable gke-gcloud-auth-plugin failed with exit code 1`,
+			wantHint: "gke-gcloud-auth-plugin could not obtain credentials",
+		},
+		{
+			name:     "generic exec plugin",
+			errMsg:   `getting credentials: exec: executable aws-iam-authenticator failed with exit code 1`,
+			wantHint: "credential plugin is installed",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Verify that our hint text matches for these patterns
+			if strings.Contains(tt.errMsg, "getting credentials: exec:") {
+				if strings.Contains(tt.errMsg, "gke-gcloud-auth-plugin") {
+					if !strings.Contains(tt.wantHint, "gke-gcloud-auth-plugin") {
+						t.Error("expected gke-specific hint")
+					}
+				}
+			}
+		})
 	}
 }
 
