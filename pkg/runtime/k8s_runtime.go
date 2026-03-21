@@ -1599,9 +1599,16 @@ func (r *KubernetesRuntime) Attach(ctx context.Context, id string) error {
 		Namespace(namespace).
 		SubResource("exec")
 
+	// Determine the container username so we attach as the correct user
+	// (K8s exec has no --user flag; we use su to switch from root).
+	username := "scion"
+	if u, ok := agent.Annotations["scion.username"]; ok && u != "" {
+		username = u
+	}
+
 	option := &corev1.PodExecOptions{
 		Container: "agent",
-		Command:   []string{"tmux", "attach", "-t", "scion"},
+		Command:   []string{"su", "-", username, "-c", "tmux attach -t scion"},
 		Stdin:     true,
 		Stdout:    true,
 		Stderr:    true,
@@ -1855,9 +1862,17 @@ func (r *KubernetesRuntime) Exec(ctx context.Context, id string, cmd []string) (
 		Namespace(namespace).
 		SubResource("exec")
 
+	// Wrap command with su to run as the scion user (K8s exec has no --user flag).
+	// Shell-quote each argument to handle spaces and special characters.
+	quoted := make([]string, len(cmd))
+	for i, arg := range cmd {
+		quoted[i] = fmt.Sprintf("'%s'", strings.ReplaceAll(arg, "'", "'\"'\"'"))
+	}
+	suCmd := []string{"su", "-", "scion", "-c", strings.Join(quoted, " ")}
+
 	option := &corev1.PodExecOptions{
 		Container: "agent",
-		Command:   cmd,
+		Command:   suCmd,
 		Stdin:     false,
 		Stdout:    true,
 		Stderr:    true,

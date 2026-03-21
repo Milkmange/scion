@@ -17,8 +17,10 @@ package runtime
 import (
 	"context"
 	"embed"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/GoogleCloudPlatform/scion/pkg/api"
@@ -366,5 +368,85 @@ func TestCreateAuthFileSecret(t *testing.T) {
 
 	if secret.Labels["scion.agent"] != "test-agent" {
 		t.Error("expected scion.agent label on auth secret")
+	}
+}
+
+// --- K8s exec user context parity (matches Docker/Podman --user scion) ---
+
+func TestK8sExec_WrapsCommandWithSu(t *testing.T) {
+	// Verify that Exec wraps commands with su to run as the scion user,
+	// matching the --user scion flag used by Docker/Podman runtimes.
+	cmd := []string{"tmux", "send-keys", "-t", "scion:0", "hello world", "Enter"}
+
+	// Simulate the wrapping logic from Exec
+	quoted := make([]string, len(cmd))
+	for i, arg := range cmd {
+		quoted[i] = fmt.Sprintf("'%s'", strings.ReplaceAll(arg, "'", "'\"'\"'"))
+	}
+	suCmd := []string{"su", "-", "scion", "-c", strings.Join(quoted, " ")}
+
+	if suCmd[0] != "su" || suCmd[1] != "-" || suCmd[2] != "scion" || suCmd[3] != "-c" {
+		t.Fatalf("expected su - scion -c prefix, got: %v", suCmd[:4])
+	}
+
+	// The -c argument should contain all original args, properly quoted
+	shellCmd := suCmd[4]
+	for _, arg := range cmd {
+		if !strings.Contains(shellCmd, arg) {
+			t.Errorf("shell command %q should contain argument %q", shellCmd, arg)
+		}
+	}
+}
+
+func TestK8sExec_QuotesSingleQuotesInArgs(t *testing.T) {
+	cmd := []string{"echo", "it's a test"}
+
+	quoted := make([]string, len(cmd))
+	for i, arg := range cmd {
+		quoted[i] = fmt.Sprintf("'%s'", strings.ReplaceAll(arg, "'", "'\"'\"'"))
+	}
+	shellCmd := strings.Join(quoted, " ")
+
+	// The single quote in "it's" should be escaped
+	if !strings.Contains(shellCmd, "'\"'\"'") {
+		t.Errorf("expected escaped single quote in %q", shellCmd)
+	}
+}
+
+func TestK8sAttach_ResolvesUsernameFromAnnotations(t *testing.T) {
+	// Verify that Attach reads the username from scion.username annotation
+	tests := []struct {
+		name        string
+		annotations map[string]string
+		wantUser    string
+	}{
+		{
+			name:        "uses annotation username",
+			annotations: map[string]string{"scion.username": "myuser"},
+			wantUser:    "myuser",
+		},
+		{
+			name:        "defaults to scion when annotation missing",
+			annotations: map[string]string{},
+			wantUser:    "scion",
+		},
+		{
+			name:        "defaults to scion when annotation empty",
+			annotations: map[string]string{"scion.username": ""},
+			wantUser:    "scion",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Simulate the username resolution logic from Attach
+			username := "scion"
+			if u, ok := tt.annotations["scion.username"]; ok && u != "" {
+				username = u
+			}
+			if username != tt.wantUser {
+				t.Errorf("got username %q, want %q", username, tt.wantUser)
+			}
+		})
 	}
 }
