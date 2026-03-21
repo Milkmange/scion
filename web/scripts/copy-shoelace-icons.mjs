@@ -106,6 +106,8 @@ const USED_ICONS = [
   'shield-lock',
   'shield-x',
   'sliders',
+  'star',
+  'star-fill',
   'stop-circle',
   'sun',
   'terminal',

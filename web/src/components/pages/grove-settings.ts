@@ -637,11 +637,6 @@ export class ScionPageGroveSettings extends LitElement {
       border-radius: var(--scion-radius, 0.5rem);
     }
 
-    .broker-item.is-default {
-      border-color: var(--scion-primary, #3b82f6);
-      background: var(--sl-color-primary-50, #eff6ff);
-    }
-
     .broker-status-dot {
       width: 10px;
       height: 10px;
@@ -707,9 +702,9 @@ export class ScionPageGroveSettings extends LitElement {
     }
 
     .broker-profile-badge.available {
-      background: #f0fdf4;
-      border-color: #86efac;
-      color: #166534;
+      background: var(--sl-color-success-50, #f0fdf4);
+      border-color: var(--sl-color-success-200, #86efac);
+      color: var(--sl-color-success-700, #166534);
     }
 
     .broker-actions {
@@ -1979,7 +1974,7 @@ export class ScionPageGroveSettings extends LitElement {
     const canEdit = canAny(this.grove!._capabilities, 'update', 'manage');
 
     return html`
-      <div class="broker-item ${isDefault ? 'is-default' : ''}">
+      <div class="broker-item">
         <span class="broker-status-dot ${broker.status}"></span>
         <div class="broker-info">
           <div class="broker-name-row">
