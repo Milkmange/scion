@@ -94,6 +94,14 @@ export class ScionAgentMessageViewer extends LitElement {
   @property()
   contextLabel = '';
 
+  /**
+   * URL for broadcasting a message to all running agents in a grove.
+   * When set, the compose box uses the broadcast API instead of the
+   * agent-scoped message endpoint.
+   */
+  @property()
+  broadcastUrl = '';
+
   @state() private messages: ParsedMessage[] = [];
   @state() private entryMap = new Map<string, ParsedMessage>();
   @state() private loading = false;
@@ -119,13 +127,26 @@ export class ScionAgentMessageViewer extends LitElement {
     /* Compose box */
     .compose-box {
       display: flex;
-      align-items: flex-start;
-      gap: 0.75rem;
+      flex-direction: column;
+      gap: 0.5rem;
       padding: 1rem;
       margin-bottom: 1rem;
       background: var(--scion-bg-subtle, #f1f5f9);
       border: 1px solid var(--scion-border, #e2e8f0);
       border-radius: var(--scion-radius, 0.5rem);
+    }
+    .compose-label {
+      display: flex;
+      align-items: center;
+      gap: 0.375rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--scion-text-muted, #64748b);
+    }
+    .compose-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
     }
     .compose-input {
       flex: 1;
@@ -519,13 +540,28 @@ export class ScionAgentMessageViewer extends LitElement {
     this.sendError = null;
 
     try {
-      const body = this.composePlain
-        ? { message: text, interrupt: this.composeInterrupt }
-        : {
-            structured_message: { msg: text, plain: false },
-            interrupt: this.composeInterrupt,
-          };
-      const res = await apiFetch(`/api/v1/agents/${this.agentId}/message`, {
+      let url: string;
+      let body: Record<string, unknown>;
+
+      if (this.broadcastUrl) {
+        // Broadcast mode: always sends structured_message
+        url = this.broadcastUrl;
+        body = {
+          structured_message: { msg: text, plain: this.composePlain },
+          interrupt: this.composeInterrupt,
+        };
+      } else {
+        // Agent-scoped mode
+        url = `/api/v1/agents/${this.agentId}/message`;
+        body = this.composePlain
+          ? { message: text, interrupt: this.composeInterrupt }
+          : {
+              structured_message: { msg: text, plain: false },
+              interrupt: this.composeInterrupt,
+            };
+      }
+
+      const res = await apiFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -590,46 +626,60 @@ export class ScionAgentMessageViewer extends LitElement {
   }
 
   private renderCompose() {
+    const isBroadcast = !!this.broadcastUrl;
+    const placeholder = isBroadcast
+      ? 'Broadcast message to all running agents in grove...'
+      : 'Send a message to this agent...';
+    const buttonLabel = isBroadcast ? 'Broadcast' : 'Send';
+
     return html`
       <div class="compose-box">
-        <div class="compose-input">
-          <sl-input
-            placeholder="Send a message to this agent..."
-            size="small"
-            .value=${this.composeText}
-            @sl-input=${(e: Event) => { this.composeText = (e.target as HTMLInputElement).value; }}
-            @keydown=${this.handleComposeKeydown}
-            ?disabled=${this.sending}
-          ></sl-input>
-          ${this.sendError ? html`<div class="send-error">${this.sendError}</div>` : nothing}
-        </div>
-        <div class="compose-actions">
-          <label>
-            <sl-checkbox
+        ${isBroadcast ? html`
+          <div class="compose-label">
+            <sl-icon name="broadcast-pin" style="font-size: 0.875rem;"></sl-icon>
+            Broadcast to all running agents in this grove
+          </div>
+        ` : nothing}
+        <div class="compose-row">
+          <div class="compose-input">
+            <sl-input
+              placeholder=${placeholder}
               size="small"
-              ?checked=${this.composePlain}
-              @sl-change=${(e: Event) => { this.composePlain = (e.target as HTMLInputElement).checked; }}
-            ></sl-checkbox>
-            Plain
-          </label>
-          <label>
-            <sl-checkbox
+              .value=${this.composeText}
+              @sl-input=${(e: Event) => { this.composeText = (e.target as HTMLInputElement).value; }}
+              @keydown=${this.handleComposeKeydown}
+              ?disabled=${this.sending}
+            ></sl-input>
+            ${this.sendError ? html`<div class="send-error">${this.sendError}</div>` : nothing}
+          </div>
+          <div class="compose-actions">
+            <label>
+              <sl-checkbox
+                size="small"
+                ?checked=${this.composePlain}
+                @sl-change=${(e: Event) => { this.composePlain = (e.target as HTMLInputElement).checked; }}
+              ></sl-checkbox>
+              Plain
+            </label>
+            <label>
+              <sl-checkbox
+                size="small"
+                ?checked=${this.composeInterrupt}
+                @sl-change=${(e: Event) => { this.composeInterrupt = (e.target as HTMLInputElement).checked; }}
+              ></sl-checkbox>
+              Interrupt
+            </label>
+            <sl-button
               size="small"
-              ?checked=${this.composeInterrupt}
-              @sl-change=${(e: Event) => { this.composeInterrupt = (e.target as HTMLInputElement).checked; }}
-            ></sl-checkbox>
-            Interrupt
-          </label>
-          <sl-button
-            size="small"
-            variant="primary"
-            ?loading=${this.sending}
-            ?disabled=${!this.composeText.trim() || this.sending}
-            @click=${this.handleSend}
-          >
-            <sl-icon slot="prefix" name="send"></sl-icon>
-            Send
-          </sl-button>
+              variant=${isBroadcast ? 'warning' : 'primary'}
+              ?loading=${this.sending}
+              ?disabled=${!this.composeText.trim() || this.sending}
+              @click=${this.handleSend}
+            >
+              <sl-icon slot="prefix" name=${isBroadcast ? 'broadcast-pin' : 'send'}></sl-icon>
+              ${buttonLabel}
+            </sl-button>
+          </div>
         </div>
       </div>
     `;

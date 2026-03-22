@@ -1335,6 +1335,8 @@ export class ScionPageGroveDetail extends LitElement {
           <scion-agent-message-viewer
             logsUrl=${`/api/v1/groves/${this.groveId}/message-logs`}
             streamUrl=${`/api/v1/groves/${this.groveId}/message-logs/stream`}
+            broadcastUrl=${`/api/v1/groves/${this.groveId}/broadcast`}
+            ?canSend=${true}
           ></scion-agent-message-viewer>
         ` : nothing}
       </div>
