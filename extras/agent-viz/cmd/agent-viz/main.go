@@ -38,7 +38,11 @@ func main() {
 		len(result.Events))
 
 	for _, a := range result.Manifest.Agents {
-		log.Printf("  Agent: %s (id=%s, harness=%s)", a.Name, a.ID[:8], a.Harness)
+		idShort := a.ID
+		if len(idShort) > 8 {
+			idShort = idShort[:8]
+		}
+		log.Printf("  Agent: %s (id=%s, harness=%s)", a.Name, idShort, a.Harness)
 	}
 	if len(result.Manifest.Files) > 0 {
 		for _, f := range result.Manifest.Files {
