@@ -116,14 +116,13 @@ export class MessageRenderer {
     // Ease-out (decelerate): 1 - (1-t)^3
     const eased = 1 - Math.pow(1 - t, 3);
 
-    // Distance from sender to the ring center, then to ring edge
-    const dx = ring.centerX - s.x;
-    const dy = ring.centerY - s.y;
-    const distToCenter = Math.sqrt(dx * dx + dy * dy);
-    const maxRadius = distToCenter + ring.radius;
-    const minRadius = 28; // start just outside the agent circle
+    // Interpolate center: sender position → ring center
+    const cx = s.x + (ring.centerX - s.x) * eased;
+    const cy = s.y + (ring.centerY - s.y) * eased;
 
-    const currentRadius = minRadius + (maxRadius - minRadius) * eased;
+    // Interpolate radius: small start → ring radius (congruent at t=1)
+    const minRadius = 28; // start just outside the agent circle
+    const currentRadius = minRadius + (ring.radius - minRadius) * eased;
 
     // Fade out in last 10% of range
     let alpha = 0.7;
@@ -135,7 +134,7 @@ export class MessageRenderer {
     // Draw the ripple ring
     ctx.save();
     ctx.beginPath();
-    ctx.arc(s.x, s.y, currentRadius, 0, Math.PI * 2);
+    ctx.arc(cx, cy, currentRadius, 0, Math.PI * 2);
     ctx.strokeStyle = this.hexToRgba(msg.color, alpha);
     ctx.lineWidth = 2.5 * (1 - t * 0.5); // thin out slightly as it expands
     ctx.shadowBlur = 8 * (1 - t);
