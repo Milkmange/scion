@@ -283,18 +283,19 @@ func (d *HTTPAgentDispatcher) buildCreateRequest(ctx context.Context, agent *sto
 			}
 		}
 		req.Config = &RemoteAgentConfig{
-			Template:      agent.Template,
-			Image:         agent.AppliedConfig.Image,
-			HarnessConfig: agent.AppliedConfig.HarnessConfig,
-			HarnessAuth:   agent.AppliedConfig.HarnessAuth,
-			Task:          agent.AppliedConfig.Task,
-			Workspace:     workspace,
-			Profile:       agent.AppliedConfig.Profile,
-			Branch:        agent.AppliedConfig.Branch,
-			TemplateID:    agent.AppliedConfig.TemplateID,
-			TemplateHash:  agent.AppliedConfig.TemplateHash,
-			GitClone:      gitClone,
-			GCPIdentity:   remoteGCPIdentity,
+			Template:        agent.Template,
+			Image:           agent.AppliedConfig.Image,
+			HarnessConfig:   agent.AppliedConfig.HarnessConfig,
+			HarnessAuth:     agent.AppliedConfig.HarnessAuth,
+			Task:            agent.AppliedConfig.Task,
+			Workspace:       workspace,
+			Profile:         agent.AppliedConfig.Profile,
+			Branch:          agent.AppliedConfig.Branch,
+			TemplateID:      agent.AppliedConfig.TemplateID,
+			TemplateHash:    agent.AppliedConfig.TemplateHash,
+			GitClone:        gitClone,
+			SharedWorkspace: groveInfo.sharedWorkspace,
+			GCPIdentity:     remoteGCPIdentity,
 		}
 		req.ResolvedEnv = agent.AppliedConfig.Env
 
@@ -460,9 +461,10 @@ func (d *HTTPAgentDispatcher) buildCreateRequest(ctx context.Context, agent *sto
 
 // groveDispatchInfo contains resolved grove information for dispatching agent requests.
 type groveDispatchInfo struct {
-	grovePath  string
-	groveSlug  string
-	sharedDirs []api.SharedDir
+	grovePath       string
+	groveSlug       string
+	sharedDirs      []api.SharedDir
+	sharedWorkspace bool // true for git-workspace hybrid groves
 }
 
 func (d *HTTPAgentDispatcher) resolveDispatchGrovePath(ctx context.Context, agent *store.Agent) (string, string) {
@@ -488,6 +490,7 @@ func (d *HTTPAgentDispatcher) resolveDispatchGroveInfo(ctx context.Context, agen
 	}
 
 	info.sharedDirs = grove.SharedDirs
+	info.sharedWorkspace = grove.IsSharedWorkspace()
 
 	// First check if the broker has a registered local path for this grove.
 	if agent.RuntimeBrokerID != "" {

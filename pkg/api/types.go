@@ -511,6 +511,19 @@ func GitCloneFromContext(ctx context.Context) *GitCloneConfig {
 	return gc
 }
 
+type sharedWorkspaceContextKey struct{}
+
+// ContextWithSharedWorkspace returns a new context with the shared workspace flag attached.
+func ContextWithSharedWorkspace(ctx context.Context) context.Context {
+	return context.WithValue(ctx, sharedWorkspaceContextKey{}, true)
+}
+
+// IsSharedWorkspaceFromContext returns true if the context indicates shared workspace mode.
+func IsSharedWorkspaceFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(sharedWorkspaceContextKey{}).(bool)
+	return v
+}
+
 type brokerModeContextKey struct{}
 
 // ContextWithBrokerMode returns a new context with broker mode flag attached.
@@ -543,6 +556,7 @@ type StartOptions struct {
 	Branch            string
 	Workspace         string
 	GitClone          *GitCloneConfig // When set, skip workspace creation; sciontool clones inside container
+	SharedWorkspace   bool            // When true, workspace is a shared git clone (git-workspace hybrid); skip worktree, configure credential helper
 	TelemetryOverride *bool           // Explicit telemetry override from CLI flags (--enable-telemetry / --disable-telemetry)
 	InlineConfig      *ScionConfig    // Inline config from --config flag, merged over template config
 	SharedDirs        []SharedDir     // Grove-level shared directories (from Hub, merged with settings)

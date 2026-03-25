@@ -7214,6 +7214,16 @@ func (s *Server) populateAgentConfig(agent *store.Agent, grove *store.Grove, res
 		}
 	}
 
+	// For shared-workspace git groves, default the branch to the grove's
+	// default branch (the workspace's current branch) instead of the agent slug.
+	if grove != nil && grove.IsSharedWorkspace() && agent.AppliedConfig.Branch == "" {
+		defaultBranch := grove.Labels["scion.dev/default-branch"]
+		if defaultBranch == "" {
+			defaultBranch = "main"
+		}
+		agent.AppliedConfig.Branch = defaultBranch
+	}
+
 	// Populate template ID, hash, and hub access scopes if template was resolved.
 	if resolvedTemplate != nil {
 		agent.AppliedConfig.TemplateID = resolvedTemplate.ID

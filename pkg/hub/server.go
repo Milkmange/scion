@@ -351,6 +351,11 @@ type RemoteAgentConfig struct {
 	// so sciontool can clone the repo inside the container.
 	GitClone *api.GitCloneConfig `json:"gitClone,omitempty"`
 
+	// SharedWorkspace indicates this agent should use a shared git clone
+	// workspace (git-workspace hybrid mode). When true, the broker skips
+	// worktree/clone creation and configures per-agent git credentials.
+	SharedWorkspace bool `json:"sharedWorkspace,omitempty"`
+
 	// GCPIdentity holds the GCP identity assignment for the agent.
 	GCPIdentity *RemoteGCPIdentityConfig `json:"gcpIdentity,omitempty"`
 }

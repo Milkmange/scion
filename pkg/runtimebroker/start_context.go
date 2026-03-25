@@ -319,6 +319,7 @@ func (s *Server) buildStartContext(ctx context.Context, in startContextInputs) (
 		opts.Workspace = in.Config.Workspace
 		opts.Profile = in.Config.Profile
 		opts.Branch = in.Config.Branch
+		opts.SharedWorkspace = in.Config.SharedWorkspace
 	}
 
 	if in.InlineConfig != nil {
@@ -360,6 +361,14 @@ func (s *Server) buildStartContext(ctx context.Context, in startContextInputs) (
 
 	if templateSlug != "" {
 		opts.TemplateName = templateSlug
+	}
+
+	// --- Shared workspace mode (git-workspace hybrid) ---
+	if in.Config != nil && in.Config.SharedWorkspace {
+		env["SCION_SHARED_WORKSPACE"] = "true"
+		if s.config.Debug {
+			s.agentLifecycleLog.Debug("Shared workspace mode enabled", "agent_id", in.AgentID)
+		}
 	}
 
 	// --- Git clone mode ---

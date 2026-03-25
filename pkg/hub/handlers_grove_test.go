@@ -1797,6 +1797,64 @@ func TestPopulateAgentConfig_SharedWorkspace_SetsWorkspaceNotClone(t *testing.T)
 		"GitClone should NOT be set for shared-workspace git groves")
 }
 
+func TestPopulateAgentConfig_SharedWorkspace_DefaultsBranch(t *testing.T) {
+	srv, _ := testServer(t)
+
+	// Shared-workspace grove with explicit default branch label
+	grove := &store.Grove{
+		ID:        "grove-shared-branch",
+		Name:      "Shared Branch",
+		Slug:      "shared-branch",
+		GitRemote: "github.com/test/shared-branch",
+		Labels: map[string]string{
+			store.LabelWorkspaceMode:   store.WorkspaceModeShared,
+			"scion.dev/default-branch": "develop",
+		},
+	}
+
+	agent := &store.Agent{
+		ID:            "agent-branch-test",
+		AppliedConfig: &store.AgentAppliedConfig{},
+	}
+
+	srv.populateAgentConfig(agent, grove, nil)
+
+	assert.Equal(t, "develop", agent.AppliedConfig.Branch,
+		"Branch should default to grove's default-branch label for shared workspace")
+
+	// When branch is already set, it should not be overridden
+	agent2 := &store.Agent{
+		ID:            "agent-branch-test-2",
+		AppliedConfig: &store.AgentAppliedConfig{Branch: "custom-branch"},
+	}
+
+	srv.populateAgentConfig(agent2, grove, nil)
+
+	assert.Equal(t, "custom-branch", agent2.AppliedConfig.Branch,
+		"Explicit branch should not be overridden by shared workspace default")
+
+	// Without default-branch label, should default to "main"
+	groveNoLabel := &store.Grove{
+		ID:        "grove-shared-nolabel",
+		Name:      "No Label",
+		Slug:      "shared-nolabel",
+		GitRemote: "github.com/test/nolabel",
+		Labels: map[string]string{
+			store.LabelWorkspaceMode: store.WorkspaceModeShared,
+		},
+	}
+
+	agent3 := &store.Agent{
+		ID:            "agent-branch-test-3",
+		AppliedConfig: &store.AgentAppliedConfig{},
+	}
+
+	srv.populateAgentConfig(agent3, groveNoLabel, nil)
+
+	assert.Equal(t, "main", agent3.AppliedConfig.Branch,
+		"Branch should default to 'main' when no default-branch label is set")
+}
+
 func TestCloneSharedWorkspaceGrove_Success(t *testing.T) {
 	srv, _ := testServer(t)
 

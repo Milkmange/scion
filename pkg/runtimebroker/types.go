@@ -255,6 +255,11 @@ type CreateAgentConfig struct {
 	// so sciontool can clone the repo inside the container.
 	GitClone *api.GitCloneConfig `json:"gitClone,omitempty"`
 
+	// SharedWorkspace indicates this agent should use a shared git clone
+	// workspace (git-workspace hybrid mode). When true, the broker skips
+	// worktree/clone creation and configures per-agent git credentials.
+	SharedWorkspace bool `json:"sharedWorkspace,omitempty"`
+
 	// SharedDirs contains grove-level shared directory declarations.
 	SharedDirs []api.SharedDir `json:"sharedDirs,omitempty"`
 

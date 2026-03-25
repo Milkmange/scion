@@ -1121,3 +1121,107 @@ func TestGetAgentGitClone_ClearsExistingWorkspace(t *testing.T) {
 		t.Errorf("expected empty workspace after clearing stale content, got: %v", names)
 	}
 }
+
+// TestProvisionAgent_SharedWorkspaceCredentialHelper verifies that when
+// SharedWorkspace context is set, ProvisionAgent writes a git credential
+// helper to the agent's home .gitconfig.
+func TestProvisionAgent_SharedWorkspaceCredentialHelper(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	os.MkdirAll(filepath.Join(globalScionDir, "templates"), 0755)
+	seedTestHarnessConfig(t, globalScionDir, "gemini", "gemini")
+	tplDir := filepath.Join(globalScionDir, "templates", "gemini")
+	os.MkdirAll(tplDir, 0755)
+	os.WriteFile(filepath.Join(tplDir, "scion-agent.json"), []byte(`{"default_harness_config":"gemini"}`), 0644)
+
+	projectDir := filepath.Join(tmpDir, "project")
+	projectScionDir := filepath.Join(projectDir, ".scion")
+	os.MkdirAll(projectScionDir, 0755)
+
+	// Create a shared workspace directory (simulates a pre-cloned git repo)
+	sharedWorkspace := filepath.Join(tmpDir, "shared-ws")
+	os.MkdirAll(sharedWorkspace, 0755)
+
+	// Set SharedWorkspace context
+	ctx := api.ContextWithSharedWorkspace(context.Background())
+
+	home, _, _, err := ProvisionAgent(ctx, "shared-agent", "gemini", "", "", projectScionDir, "", "", "", sharedWorkspace)
+	if err != nil {
+		t.Fatalf("ProvisionAgent failed: %v", err)
+	}
+
+	// Verify .gitconfig contains the credential helper
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	data, err := os.ReadFile(gitconfigPath)
+	if err != nil {
+		t.Fatalf("failed to read .gitconfig: %v", err)
+	}
+
+	content := string(data)
+	if !strings.Contains(content, "[credential]") {
+		t.Errorf("expected [credential] section in .gitconfig, got:\n%s", content)
+	}
+	if !strings.Contains(content, "GITHUB_TOKEN") {
+		t.Errorf("expected GITHUB_TOKEN reference in credential helper, got:\n%s", content)
+	}
+	if !strings.Contains(content, "username=oauth2") {
+		t.Errorf("expected username=oauth2 in credential helper, got:\n%s", content)
+	}
+}
+
+// TestProvisionAgent_SharedWorkspaceNoCredentialWithoutFlag verifies that
+// when SharedWorkspace context is NOT set, no credential helper is added
+// to the agent's .gitconfig.
+func TestProvisionAgent_SharedWorkspaceNoCredentialWithoutFlag(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	oldWd, _ := os.Getwd()
+	os.Chdir(tmpDir)
+	defer os.Chdir(oldWd)
+
+	originalHome := os.Getenv("HOME")
+	defer os.Setenv("HOME", originalHome)
+	os.Setenv("HOME", tmpDir)
+
+	globalScionDir := filepath.Join(tmpDir, ".scion")
+	os.MkdirAll(filepath.Join(globalScionDir, "templates"), 0755)
+	seedTestHarnessConfig(t, globalScionDir, "gemini", "gemini")
+	tplDir := filepath.Join(globalScionDir, "templates", "gemini")
+	os.MkdirAll(tplDir, 0755)
+	os.WriteFile(filepath.Join(tplDir, "scion-agent.json"), []byte(`{"default_harness_config":"gemini"}`), 0644)
+
+	projectDir := filepath.Join(tmpDir, "project")
+	projectScionDir := filepath.Join(projectDir, ".scion")
+	os.MkdirAll(projectScionDir, 0755)
+
+	customWorkspace := filepath.Join(tmpDir, "custom-ws")
+	os.MkdirAll(customWorkspace, 0755)
+
+	// No SharedWorkspace context — plain workspace mount
+	home, _, _, err := ProvisionAgent(context.Background(), "plain-agent", "gemini", "", "", projectScionDir, "", "", "", customWorkspace)
+	if err != nil {
+		t.Fatalf("ProvisionAgent failed: %v", err)
+	}
+
+	// Verify .gitconfig does NOT contain credential helper
+	gitconfigPath := filepath.Join(home, ".gitconfig")
+	data, err := os.ReadFile(gitconfigPath)
+	if err != nil {
+		// .gitconfig may not exist at all if no template provides it
+		return
+	}
+
+	content := string(data)
+	if strings.Contains(content, "[credential]") {
+		t.Errorf("expected no [credential] section in .gitconfig for non-shared workspace, got:\n%s", content)
+	}
+}

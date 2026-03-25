@@ -2814,3 +2814,66 @@ func TestDispatchAgentStart_IncludesHubEndpoint(t *testing.T) {
 		t.Errorf("SCION_GROVE_ID = %q, want %q", mockClient.lastResolvedEnv["SCION_GROVE_ID"], "grove-1")
 	}
 }
+
+func TestHTTPAgentDispatcher_DispatchAgentCreate_PropagatesSharedWorkspace(t *testing.T) {
+	ctx := context.Background()
+	memStore := createTestStore(t)
+
+	// Create a shared-workspace git grove
+	grove := &store.Grove{
+		ID:        "grove-shared-ws",
+		Name:      "Shared WS",
+		Slug:      "shared-ws",
+		GitRemote: "github.com/test/shared",
+		Labels: map[string]string{
+			store.LabelWorkspaceMode: store.WorkspaceModeShared,
+		},
+	}
+	if err := memStore.CreateGrove(ctx, grove); err != nil {
+		t.Fatalf("failed to create grove: %v", err)
+	}
+
+	broker := &store.RuntimeBroker{
+		ID:       "host-1",
+		Name:     "test-host",
+		Slug:     "test-host",
+		Endpoint: "http://localhost:9800",
+		Status:   store.BrokerStatusOnline,
+	}
+	if err := memStore.CreateRuntimeBroker(ctx, broker); err != nil {
+		t.Fatalf("failed to create runtime broker: %v", err)
+	}
+
+	mockClient := &mockRuntimeBrokerClient{}
+	dispatcher := NewHTTPAgentDispatcherWithClient(memStore, mockClient, false, slog.Default())
+
+	agent := &store.Agent{
+		ID:              "agent-shared-1",
+		Name:            "shared-agent",
+		Slug:            "shared-agent",
+		GroveID:         "grove-shared-ws",
+		RuntimeBrokerID: "host-1",
+		AppliedConfig: &store.AgentAppliedConfig{
+			HarnessConfig: "claude",
+			Workspace:     "/home/user/.scion/groves/shared-ws",
+		},
+	}
+
+	err := dispatcher.DispatchAgentCreate(ctx, agent)
+	if err != nil {
+		t.Fatalf("DispatchAgentCreate failed: %v", err)
+	}
+
+	if !mockClient.createCalled {
+		t.Fatal("expected CreateAgent to be called")
+	}
+	if mockClient.lastCreateReq.Config == nil {
+		t.Fatal("expected config to be present")
+	}
+	if !mockClient.lastCreateReq.Config.SharedWorkspace {
+		t.Error("expected SharedWorkspace=true for shared-workspace git grove")
+	}
+	if mockClient.lastCreateReq.Config.GitClone != nil {
+		t.Error("expected GitClone to be nil for shared-workspace grove")
+	}
+}

@@ -248,6 +248,12 @@ func runInit(args []string) int {
 		return 1
 	}
 
+	// Configure git credentials for shared-workspace groves (git-workspace hybrid).
+	// The workspace is pre-cloned on the host; agents need credentials to push/pull.
+	if os.Getenv("SCION_SHARED_WORKSPACE") == "true" {
+		configureSharedWorkspaceGit(agentHome)
+	}
+
 	// Read and start sidecar services
 	var svcManager *services.Manager
 	// Workaround: Claude Code creates a dangling symlink at
@@ -1117,6 +1123,51 @@ func gitCloneWorkspace(uid, gid int) error {
 
 	log.Info("Git clone complete: %s on branch %s", normalizedURL, branchName)
 	return nil
+}
+
+// configureSharedWorkspaceGit sets up git credentials for shared-workspace
+// (git-workspace hybrid) groves. The workspace is a pre-cloned git repo shared
+// by all agents; each agent gets its own credential helper in $HOME/.gitconfig
+// so credentials don't pollute the shared workspace.
+func configureSharedWorkspaceGit(agentHome string) {
+	log.Info("Configuring git credentials for shared workspace")
+
+	// Configure credential helper using sciontool's credential-helper command,
+	// which handles both GITHUB_TOKEN env var and GitHub App token refresh.
+	gitconfigPath := filepath.Join(agentHome, ".gitconfig")
+
+	var credentialHelper string
+	if os.Getenv("SCION_GITHUB_APP_ENABLED") == "true" {
+		// Use sciontool credential-helper for GitHub App token refresh
+		credentialHelper = "!sciontool credential-helper"
+	} else {
+		// Simple credential helper using GITHUB_TOKEN env var
+		credentialHelper = `!f() { echo "password=${GITHUB_TOKEN}"; echo "username=oauth2"; }; f`
+	}
+
+	// Use git config to set the credential helper in the user's gitconfig.
+	// This is idempotent and works even if provisioning already set it.
+	cmd := exec.Command("git", "config", "--file", gitconfigPath, "credential.helper", credentialHelper)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		log.Error("Failed to configure credential helper: %s %v", string(out), err)
+	}
+
+	// Configure git identity for the agent
+	agentName := os.Getenv("SCION_AGENT_NAME")
+	if agentName == "" {
+		agentName = "unknown"
+	}
+
+	configs := []struct{ key, value string }{
+		{"user.name", fmt.Sprintf("Scion Agent (%s)", agentName)},
+		{"user.email", "agent@scion.dev"},
+	}
+	for _, cfg := range configs {
+		cmd := exec.Command("git", "config", "--file", gitconfigPath, cfg.key, cfg.value)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			log.Error("Failed to set git config %s: %s %v", cfg.key, string(out), err)
+		}
+	}
 }
 
 // isAuthError returns true if the git stderr output indicates an authentication

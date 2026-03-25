@@ -175,6 +175,9 @@ func (m *AgentManager) Provision(ctx context.Context, opts api.StartOptions) (*a
 	if opts.GitClone != nil {
 		ctx = api.ContextWithGitClone(ctx, opts.GitClone)
 	}
+	if opts.SharedWorkspace {
+		ctx = api.ContextWithSharedWorkspace(ctx)
+	}
 	// Inject harness auth override into inline config so it is applied
 	// before harness Provision() runs (which reads auth_selectedType to
 	// decide which env vars to inject into scion-agent.json).
@@ -764,6 +767,25 @@ func ProvisionAgent(ctx context.Context, agentName string, templateName string, 
 		if err := os.WriteFile(filepath.Join(scionDir, "scion-services.yaml"), servicesData, 0644); err != nil {
 			return "", "", nil, fmt.Errorf("failed to write scion-services.yaml: %w", err)
 		}
+	}
+
+	// 2f. Configure git credential helper for shared-workspace groves.
+	// The credential helper uses GITHUB_TOKEN env var (injected at runtime)
+	// and is written to $HOME/.gitconfig so it doesn't pollute the shared workspace.
+	if api.IsSharedWorkspaceFromContext(ctx) {
+		gitconfigPath := filepath.Join(agentHome, ".gitconfig")
+		credentialSection := "\n[credential]\n\thelper = !f() { echo \"username=oauth2\"; echo \"password=${GITHUB_TOKEN}\"; }; f\n"
+		// Append to existing .gitconfig (which may have [safe] directory config)
+		f, err := os.OpenFile(gitconfigPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return "", "", nil, fmt.Errorf("failed to open .gitconfig for credential helper: %w", err)
+		}
+		if _, err := f.WriteString(credentialSection); err != nil {
+			f.Close()
+			return "", "", nil, fmt.Errorf("failed to write credential helper to .gitconfig: %w", err)
+		}
+		f.Close()
+		util.Debugf("provision: configured git credential helper for shared workspace in %s", gitconfigPath)
 	}
 
 	// 3. Harness provisioning
