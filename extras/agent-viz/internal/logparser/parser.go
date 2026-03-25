@@ -609,36 +609,38 @@ func extractEventsOpt(entries []GCPLogEntry, agents []AgentInfo, skipFileEvents 
 						ToolName: toolName,
 					},
 				})
-				// Generate file events for tools that interact with files
-				// (suppressed when fs-watcher log provides file events)
-				if !skipFileEvents {
-					fp := extractFilePath(jp)
-					if fp != "" {
-						if isFileEditTool(toolName) {
-							action := "edit"
-							if toolName == "write_file" || toolName == "create_file" || toolName == "Write" {
-								action = "create"
-							}
-							events = append(events, PlaybackEvent{
-								Type:      "file_edit",
-								Timestamp: ts,
-								Data: FileEditEvent{
-									AgentID:  aid,
-									FilePath: fp,
-									Action:   action,
-								},
-							})
-						} else if isFileReadTool(toolName) {
-							events = append(events, PlaybackEvent{
-								Type:      "file_read",
-								Timestamp: ts,
-								Data: FileEditEvent{
-									AgentID:  aid,
-									FilePath: fp,
-									Action:   "read",
-								},
-							})
+				// Generate file events for tools that interact with files.
+				// When fs-watcher log is active, write/edit events are suppressed
+				// (the fs-watcher provides more accurate data for those).
+				fp := extractFilePath(jp)
+				if fp != "" {
+					if !skipFileEvents && isFileEditTool(toolName) {
+						action := "edit"
+						if toolName == "write_file" || toolName == "create_file" || toolName == "Write" {
+							action = "create"
 						}
+						events = append(events, PlaybackEvent{
+							Type:      "file_edit",
+							Timestamp: ts,
+							Data: FileEditEvent{
+								AgentID:  aid,
+								FilePath: fp,
+								Action:   action,
+							},
+						})
+					} else if isFileReadTool(toolName) {
+						// TODO: Remove this special case when fs-watcher supports read events.
+						// Currently fs-watcher only captures writes, so file_read events
+						// are always sourced from the primary log regardless of --fs-log.
+						events = append(events, PlaybackEvent{
+							Type:      "file_read",
+							Timestamp: ts,
+							Data: FileEditEvent{
+								AgentID:  aid,
+								FilePath: fp,
+								Action:   "read",
+							},
+						})
 					}
 				}
 			case "agent.tool.result":

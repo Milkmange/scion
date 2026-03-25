@@ -525,7 +525,7 @@ func TestParseFSLog(t *testing.T) {
 }
 
 func TestParseLogFileWithFSLog(t *testing.T) {
-	// Primary log with a tool call that produces a file_edit
+	// Primary log with a write tool call and a read tool call
 	entries := []GCPLogEntry{
 		{
 			InsertID:  "1",
@@ -544,6 +544,17 @@ func TestParseLogFileWithFSLog(t *testing.T) {
 			LogName:   "projects/test/logs/scion-agents",
 			Labels:    map[string]string{"agent_id": "agent-1", "scion.harness": "claude"},
 			JSONPayload: map[string]any{
+				"message":   "agent.tool.call",
+				"tool_name": "Read",
+				"file_path": "/workspace/README.md",
+			},
+		},
+		{
+			InsertID:  "3",
+			Timestamp: "2026-03-22T16:30:02.000Z",
+			LogName:   "projects/test/logs/scion-agents",
+			Labels:    map[string]string{"agent_id": "agent-1", "scion.harness": "claude"},
+			JSONPayload: map[string]any{
 				"message": "agent.turn.end",
 			},
 		},
@@ -559,13 +570,15 @@ func TestParseLogFileWithFSLog(t *testing.T) {
 	fsLogPath := filepath.Join(tmpDir, "fs.ndjson")
 	os.WriteFile(fsLogPath, []byte(fsLogLines), 0o644)
 
-	// Parse with fs-log: file events from primary log should be suppressed
+	// Parse with fs-log: file_edit from Write tool should be suppressed,
+	// but file_read from Read tool should still appear (fs-watcher doesn't capture reads yet).
 	result, err := ParseLogFile(logPath, fsLogPath)
 	if err != nil {
 		t.Fatalf("ParseLogFile with fs-log failed: %v", err)
 	}
 
 	fileEditCount := 0
+	fileReadCount := 0
 	for _, e := range result.Events {
 		if e.Type == "file_edit" {
 			fileEditCount++
@@ -578,25 +591,42 @@ func TestParseLogFileWithFSLog(t *testing.T) {
 				t.Errorf("expected action 'edit' from fs-log modify, got %q", fe.Action)
 			}
 		}
+		if e.Type == "file_read" {
+			fileReadCount++
+			fe := e.Data.(FileEditEvent)
+			if fe.FilePath != "README.md" {
+				t.Errorf("unexpected file_read path: %q", fe.FilePath)
+			}
+		}
 	}
 	if fileEditCount != 1 {
 		t.Errorf("expected exactly 1 file_edit (from fs-log), got %d", fileEditCount)
 	}
+	if fileReadCount != 1 {
+		t.Errorf("expected 1 file_read from primary log even with --fs-log, got %d", fileReadCount)
+	}
 
-	// Parse without fs-log: should have tool-based file event
+	// Parse without fs-log: should have both tool-based file events
 	resultNoFS, err := ParseLogFile(logPath, "")
 	if err != nil {
 		t.Fatalf("ParseLogFile without fs-log failed: %v", err)
 	}
 
 	fileEditCount = 0
+	fileReadCount = 0
 	for _, e := range resultNoFS.Events {
 		if e.Type == "file_edit" {
 			fileEditCount++
 		}
+		if e.Type == "file_read" {
+			fileReadCount++
+		}
 	}
 	if fileEditCount != 1 {
 		t.Errorf("expected 1 file_edit from tool calls, got %d", fileEditCount)
+	}
+	if fileReadCount != 1 {
+		t.Errorf("expected 1 file_read from tool calls, got %d", fileReadCount)
 	}
 }
 
