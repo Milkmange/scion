@@ -28,6 +28,7 @@ import { can, canAny, getAgentDisplayStatus, isAgentRunning, isTerminalAvailable
 import type { StatusType } from '../shared/status-badge.js';
 import { apiFetch, extractApiError } from '../../client/api.js';
 import { stateManager } from '../../client/state.js';
+import '../shared/git-remote-display.js';
 import type { ViewMode } from '../shared/view-toggle.js';
 import '../shared/status-badge.js';
 import '../shared/view-toggle.js';
@@ -727,14 +728,6 @@ export class ScionPageGroveDetail extends LitElement {
     }
   `;
 
-  private static gitHubLink(remote: string): { url: string; display: string } | null {
-    const sshMatch = remote.match(/^git@github\.com:(.+?)(?:\.git)?$/);
-    if (sshMatch) return { url: `https://github.com/${sshMatch[1]}`, display: `github.com/${sshMatch[1]}` };
-    const httpsMatch = remote.match(/^https?:\/\/(github\.com\/.+?)(?:\.git)?$/);
-    if (httpsMatch) return { url: `https://${httpsMatch[1]}`, display: httpsMatch[1] };
-    return null;
-  }
-
   private boundOnAgentsUpdated = this.onAgentsUpdated.bind(this);
   private boundOnGrovesUpdated = this.onGrovesUpdated.bind(this);
 
@@ -913,18 +906,6 @@ export class ScionPageGroveDetail extends LitElement {
   }
 
   private renderGroveIcon() {
-    if (!this.grove) return nothing;
-    const hasGitHub = this.grove.githubInstallationId != null;
-    if (hasGitHub) {
-      return html`
-        <sl-tooltip content="GitHub App installed">
-          <span style="position: relative; display: inline-flex;">
-            <sl-icon name="folder-fill"></sl-icon>
-            <sl-icon name="github" style="position: absolute; bottom: -4px; right: -6px; font-size: 1.125rem; background: var(--scion-bg, #fff); border-radius: 50%;"></sl-icon>
-          </span>
-        </sl-tooltip>
-      `;
-    }
     return html`<sl-icon name="folder-fill"></sl-icon>`;
   }
 
@@ -1334,14 +1315,7 @@ export class ScionPageGroveDetail extends LitElement {
             ${this.renderGroveIcon()}
             <h1>${this.grove.name}${this.renderLinkedBadge()}</h1>
           </div>
-          <div class="header-path">${(() => {
-            if (this.grove.gitRemote) {
-              const gh = ScionPageGroveDetail.gitHubLink(this.grove.gitRemote);
-              if (gh) return html`<a href="${gh.url}" target="_blank" rel="noopener noreferrer">${gh.display}</a>`;
-              return this.grove.gitRemote;
-            }
-            return this.grove.groveType === 'linked' ? 'Linked grove' : 'Hub Workspace';
-          })()}</div>
+          <div class="header-path"><scion-git-remote-display .grove=${this.grove}></scion-git-remote-display></div>
         </div>
         <div class="header-actions">
           ${can(this.agentScopeCapabilities, 'create')

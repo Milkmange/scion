@@ -105,6 +105,7 @@ const USED_ICONS = [
   'plus-circle',
   'plus-lg',
   'question-circle',
+  'robot',
   'pause-circle',
   'search',
   'send',

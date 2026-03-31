@@ -28,6 +28,7 @@ import { can } from '../../shared/types.js';
 import { apiFetch, extractApiError } from '../../client/api.js';
 import { stateManager } from '../../client/state.js';
 import { listPageStyles } from '../shared/resource-styles.js';
+import '../shared/git-remote-display.js';
 import type { ViewMode } from '../shared/view-toggle.js';
 import '../shared/view-toggle.js';
 
@@ -114,30 +115,8 @@ export class ScionPageGroves extends LitElement {
         font-size: 0.8125rem;
       }
 
-      .grove-path a {
-        color: inherit;
-        text-decoration: none;
-      }
-
-      .grove-path a:hover,
-      .mono-cell a:hover {
-        color: var(--scion-primary, #3b82f6);
-      }
-
-      .mono-cell a {
-        color: inherit;
-        text-decoration: none;
-      }
     `,
   ];
-
-  private static gitHubLink(remote: string): { url: string; display: string } | null {
-    const sshMatch = remote.match(/^git@github\.com:(.+?)(?:\.git)?$/);
-    if (sshMatch) return { url: `https://github.com/${sshMatch[1]}`, display: `github.com/${sshMatch[1]}` };
-    const httpsMatch = remote.match(/^https?:\/\/(github\.com\/.+?)(?:\.git)?$/);
-    if (httpsMatch) return { url: `https://${httpsMatch[1]}`, display: httpsMatch[1] };
-    return null;
-  }
 
   private boundOnGrovesUpdated = this.onGrovesUpdated.bind(this);
 
@@ -370,10 +349,6 @@ export class ScionPageGroves extends LitElement {
   }
 
   private renderGroveCard(grove: Grove) {
-    const ghLink = grove.gitRemote ? ScionPageGroves.gitHubLink(grove.gitRemote) : null;
-    const pathContent = ghLink
-      ? html`<a href="${ghLink.url}" target="_blank" rel="noopener noreferrer" @click=${(e: Event) => e.stopPropagation()}>${ghLink.display}</a>`
-      : grove.gitRemote || grove.path || (grove.groveType === 'linked' ? 'Linked grove' : 'Hub workspace');
     return html`
       <a href="/groves/${grove.id}" class="resource-card">
         <div class="grove-header">
@@ -382,7 +357,7 @@ export class ScionPageGroves extends LitElement {
               ${this.renderGroveIcon()}
               ${grove.name}${this.renderLinkedBadge(grove)}
             </h3>
-            <div class="grove-path">${pathContent}${grove.githubInstallationId != null ? html` <sl-tooltip content="GitHub App installed"><sl-icon name="github" style="font-size: 0.875rem; vertical-align: middle; opacity: 0.7;"></sl-icon></sl-tooltip>` : ''}</div>
+            <div class="grove-path"><scion-git-remote-display .grove=${grove} stop-propagation></scion-git-remote-display></div>
           </div>
         </div>
         <div class="grove-stats">
@@ -422,10 +397,6 @@ export class ScionPageGroves extends LitElement {
   }
 
   private renderGroveRow(grove: Grove) {
-    const ghLink = grove.gitRemote ? ScionPageGroves.gitHubLink(grove.gitRemote) : null;
-    const remoteContent = ghLink
-      ? html`<a href="${ghLink.url}" target="_blank" rel="noopener noreferrer" @click=${(e: Event) => e.stopPropagation()}>${ghLink.display}</a>`
-      : grove.gitRemote || grove.path || (grove.groveType === 'linked' ? 'Linked grove' : 'Hub workspace');
     return html`
       <tr class="clickable" @click=${() => {
         window.history.pushState({}, '', `/groves/${grove.id}`);
@@ -437,7 +408,7 @@ export class ScionPageGroves extends LitElement {
             ${grove.name}${this.renderLinkedBadge(grove)}
           </span>
         </td>
-        <td class="mono-cell">${remoteContent}${grove.githubInstallationId != null ? html` <sl-tooltip content="GitHub App installed"><sl-icon name="github" style="font-size: 0.875rem; vertical-align: middle; opacity: 0.7;"></sl-icon></sl-tooltip>` : ''}</td>
+        <td class="mono-cell"><scion-git-remote-display .grove=${grove} stop-propagation></scion-git-remote-display></td>
         <td>${grove.agentCount}</td>
         <td class="hide-mobile">
           <span class="meta-text">${grove.ownerName || '—'}</span>
